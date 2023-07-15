@@ -27,11 +27,10 @@ var (
 
 func init() {
 	fmt.Println("Initializing..")
-	flag.Uintvar(&adminPort, "admin-port", defaultAdminApiPort, "The port for the Admin API")
+	flag.Uintvar(&adminPort, "admin-port", defaultAdminPort, "The port for the Admin API")
 	flag.StringVar(&vegaGrpcAddr, "vega-grpc-addr", defaultVegaGrpcAddr, "A vega grpc server")
 	flag.StringVar(&binanceWsAddr, "binance-ws-addr", defaultBinanceWsAddr, "A Binance websocket url")
-
-	flag.StringVar(&walletURL, "wallet-url", defaultWalletURL, "a vega wallet service address")
+	flag.StringVar(&walletServiceAddr, "wallet-service-addr", defaultWalletServiceAddr, "A vega wallet service address")
 	flag.StringVar(&walletToken, "wallet-token", "", "a vega wallet token (for info see vega wallet token-api -h)")
 	flag.StringVar(&walletPubkey, "wallet-pubkey", "", "a vega public key")
 	flag.StringVar(&vegaMarket, "vega-market", "", "a vega market id")
@@ -50,6 +49,9 @@ func main() {
 	//	e). Subscribe to vega data
 	//	f). Run strategy
 
+	// Get config
+	config := parseFlags()
+
 	// a).
 	w, err := wallet.NewClient(defaultWalletServiceAddr, token)
 	if err != nil {
@@ -58,7 +60,7 @@ func main() {
 
 	// b).
 	store := newDataStore(binanceMarket)
-	client := initDataClient()
+	client := newDataClient(config)
 
 	// c).
 	go client.streamBinanceData(config, dataStore)

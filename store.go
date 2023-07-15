@@ -34,20 +34,20 @@ type DataStore struct {
 	b *BinanceStore
 }
 
-func newVegaStore() VegaStore {
+func newVegaStore() *VegaStore {
 	return &VegaStore{
 		accounts: map[string]*apipb.AccountBalance{},
 		orders: map[string]*vegapb.Order{},
 	}
 }
 
-func newBinanceStore(mkt string) BinnaceStore {
+func newBinanceStore(mkt string) *BinanceStore {
 	return &BinanceStore{
 		market: mkt,
 	}
 }
 
-func newDataStore(binanceMkt string) DataStore {
+func newDataStore(binanceMkt string) *DataStore {
 	return &DataStore{
 		v: newVegaStore(),
 		b: newBinanceStore(binanceMkt),
