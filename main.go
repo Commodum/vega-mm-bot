@@ -3,19 +3,23 @@ package main
 import (
 	"fmt"
 	"flag"
+	"os"
+	"os/signal"
+	"syscall"
+	"log"
 
-	wallet "github.com/jeremyletang/vega-go-sdk/wallet"
+	// wallet "github.com/jeremyletang/vega-go-sdk/wallet"
 )
 
 const (
 	defaultAdminPort			= 8080
 	defaultVegaGrpcAddr 		= "tls://vega-mainnet-data-grpc.commodum.io:443" // "vega-data.nodes.guru:3007" "vega-data.bharvest.io:3007" "datanode.vega.pathrocknetwork.org:3007"
-	defaultBinanceWsAddr 		= "wss://ws-api.binance.com:443/ws-api/v3"
+	defaultBinanceWsAddr 		= "wss://stream.binance.com:443/ws"
 	defaultWalletServiceAddr 	= "http://127.0.0.1:1789"
 )
 
 var (
-	adminPort 			int
+	adminPort 			uint
 	vegaGrpcAddr		string
 	binanceWsAddr		string
 	walletServiceAddr 	string
@@ -27,7 +31,7 @@ var (
 
 func init() {
 	fmt.Println("Initializing..")
-	flag.Uintvar(&adminPort, "admin-port", defaultAdminPort, "The port for the Admin API")
+	flag.UintVar(&adminPort, "admin-port", defaultAdminPort, "The port for the Admin API")
 	flag.StringVar(&vegaGrpcAddr, "vega-grpc-addr", defaultVegaGrpcAddr, "A vega grpc server")
 	flag.StringVar(&binanceWsAddr, "binance-ws-addr", defaultBinanceWsAddr, "A Binance websocket url")
 	flag.StringVar(&walletServiceAddr, "wallet-service-addr", defaultWalletServiceAddr, "A vega wallet service address")
@@ -53,18 +57,24 @@ func main() {
 	config := parseFlags()
 
 	// a).
-	w, err := wallet.NewClient(defaultWalletServiceAddr, token)
-	if err != nil {
-		log.Fatalf("Could not connect to wallet: %v", err);
-	}
+	// w, err := wallet.NewClient(defaultWalletServiceAddr, config.WalletToken)
+	// if err != nil {
+	// 	log.Fatalf("Could not connect to wallet: %v", err);
+	// }
 
 	// b).
 	store := newDataStore(binanceMarket)
-	client := newDataClient(config)
+	client := newDataClient(config, store)
 
 	// c).
-	go client.streamBinanceData(config, dataStore)
+	go client.streamBinanceData()
 
-	go client.streamVegaData(config, dataStore)
+	//go client.streamVegaData(config, dataStore)
 
+	gracefulStop := make(chan os.Signal, 1)
+	signal.Notify(gracefulStop, syscall.SIGTERM, syscall.SIGINT)
+	<-gracefulStop
+
+	log.Print("Terminating due to user input.")
+	
 }

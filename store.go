@@ -1,13 +1,14 @@
 package main
 
 import (
-	"fmt"
+	// "fmt"
 	"sync"
 
-	"github.com/gorilla/websocket"
+	// "github.com/gorilla/websocket"
 	"github.com/shopspring/decimal"
 	apipb "code.vegaprotocol.io/vega/protos/data-node/api/v2"
 	vegapb "code.vegaprotocol.io/vega/protos/vega"
+	"golang.org/x/exp/maps"
 )
 
 type VegaStore struct {
@@ -119,7 +120,7 @@ func (v *VegaStore) SetOrders(orders []*vegapb.Order) {
 	}
 }
 
-func (v *VegaStore) GetAccounts() []*vegapb.Order {
+func (v *VegaStore) GetOrders() []*vegapb.Order {
 	v.mu.RLock()
 	defer v.mu.RUnlock()
 	return maps.Values(v.orders)
@@ -135,4 +136,17 @@ func (v *VegaStore) GetPosition() *vegapb.Position {
 	v.mu.RLock()
 	defer v.mu.RUnlock()
 	return v.position
+}
+
+func (b *BinanceStore) Set(bid, ask decimal.Decimal) {
+	b.mu.Lock()
+	defer b.mum.Unlock()
+	b.bestBid, b.bestAsk = bid, ask
+}
+
+
+func (b *BinanceStore) Get(bid, ask decimal.Decimal) {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.bestBid, b.bestAsk
 }

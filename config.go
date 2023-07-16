@@ -1,18 +1,13 @@
 package main
 
 import (
-	"fmt"
+	// "fmt"
+	"flag"
 	"log"
 	"os"
 )
 
-defaultAdminPort
-defaultVegaGrpcAddr
-defaultBinanceWsAddr
-defaultWalletServiceAddr
-
 type Config struct {
-	AdminPort 			int
 	VegaGrpcAddr		string
 	BinanceWsAddr		string
 	WalletServiceAddr 	string
@@ -25,33 +20,29 @@ type Config struct {
 func parseFlags() *Config {
 	flag.Parse()
 	
-	if adminPort = getFlag(adminPort, os.Getenv("VEGAMM_ADMIN_PORT")); len(adminPort) <= 0 {
-		adminPort = defaultAdminPort
-	}
 	if vegaGrpcAddr = getFlag(vegaGrpcAddr, os.Getenv("VEGAMM_VEGA_GRPC_ADDR")); len(vegaGrpcAddr) <= 0 {
 		vegaGrpcAddr = defaultVegaGrpcAddr
 	}
 	if binanceWsAddr = getFlag(binanceWsAddr, os.Getenv("VEGAMM_BINANCE_WS_ADDR")); len(binanceWsAddr) <= 0 {
-		binanceWsAddr = defaultbinanceWsAddr
+		binanceWsAddr = defaultBinanceWsAddr
 	}
 	if walletServiceAddr = getFlag(walletServiceAddr, os.Getenv("VEGAMM_WALLET_SERVICE_ADDR")); len(walletServiceAddr) <= 0 {
-		walletServiceAddr = defaultwalletServiceAddr
+		walletServiceAddr = defaultWalletServiceAddr
 	}
-	if walletToken = getFlag(walletToken, os.Getenv("VEGAMM_WALLET_TOKEN")); len(walletToken) <= 0 {
-		log.Fatal("Error: Missing -wallet-token flag")
-	}
-	if walletPubkey = getFlag(walletPubkey, os.Getenv("VEGAMM_WALLET_PUBKEY")); len(walletPubkey) <= 0 {
-		log.Fatal("Error: Missing -wallet-pubkey flag")
-	}
-	if vegaMarket = getFlag(vegaMarket, os.Getenv("VEGAMM_VEGA_MARKET")); len(vegaMarket) <= 0 {
-		log.Fatal("Error: Missing -vega-market flag")
-	}
+	// if walletToken = getFlag(walletToken, os.Getenv("VEGAMM_WALLET_TOKEN")); len(walletToken) <= 0 {
+	// 	log.Fatal("Error: Missing -wallet-token flag")
+	// }
+	// if walletPubkey = getFlag(walletPubkey, os.Getenv("VEGAMM_WALLET_PUBKEY")); len(walletPubkey) <= 0 {
+	// 	log.Fatal("Error: Missing -wallet-pubkey flag")
+	// }
+	// if vegaMarket = getFlag(vegaMarket, os.Getenv("VEGAMM_VEGA_MARKET")); len(vegaMarket) <= 0 {
+	// 	log.Fatal("Error: Missing -vega-market flag")
+	// }
 	if binanceMarket = getFlag(binanceMarket, os.Getenv("VEGAMM_BINANCE_MARKET")); len(binanceMarket) <= 0 {
 		log.Fatal("Error: Missing -binance-market flag")
 	}
 
 	return &Config{
-		AdminPort: adminPort,
 		VegaGrpcAddr: vegaGrpcAddr,
 		BinanceWsAddr: binanceWsAddr,
 		WalletServiceAddr: walletServiceAddr,
