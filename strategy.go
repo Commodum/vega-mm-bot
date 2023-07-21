@@ -53,15 +53,14 @@ func RunStrategy(walletClient *wallet.Client, dataClient *DataClient) {
 			// Determine order sizing from position and balance.
 			// We will use fixed ratios to determine order sizing from the available balance
 
-			bidVol := decimal.Max(balance.Mul(decimal.NewFromFloat(0.25)).Sub(openVol.Mul(avgEntryPrice)), decimal.NewFromFloat(0))
-			askVol := decimal.Max(balance.Mul(decimal.NewFromFloat(0.25)).Add(openVol.Mul(avgEntryPrice)), decimal.NewFromFloat(0))
+			bidVol := decimal.Max(balance.Mul(decimal.NewFromFloat(0.5)).Sub(openVol.Mul(avgEntryPrice)), decimal.NewFromFloat(0))
+			askVol := decimal.Max(balance.Mul(decimal.NewFromFloat(0.5)).Add(openVol.Mul(avgEntryPrice)), decimal.NewFromFloat(0))
 
 			// Use the current position to determine the offset from the reference price for each order submission.
 			// If we are exposed long then asks have no offset while bids have an offset. Vice versa for short exposure.
 			// If exposure is below a threshold in either direction then there set both offsets to 0.
 
 			neutralityThreshold := 0.02
-
 
 			switch true {
 				case signedExposure < balance.Mul(decimal.NewFromFloat(neutralityThreshold)).Mul(decimal.NewFromInt(-1)):
@@ -90,29 +89,52 @@ func RunStrategy(walletClient *wallet.Client, dataClient *DataClient) {
 
 		}
 
-		// Get market
-
-		// Get decimals
-
-		// Get best bid and ask from binance
-
-		// Get position entry price, open volume, and notional exposure
-
-		// Get pubkey balance
-
 		// Create batch market instructions
 
 		// Send transaction
-
 
 	}
 
 }
 
-func GetOrderSubmission(d decimals, vegaRefPrice, binanceRefPrice, firstOffset, targetVolume decimal.Decimal, side vegapb.Side, marketId string) []*commandspb.OrderSubmission {
+func GetOrderSubmission(d decimals, vegaRefPrice, binanceRefPrice, offset, targetVolume decimal.Decimal, side vegapb.Side, marketId string) []*commandspb.OrderSubmission {
 
+	numOrders := 5;
+	totalOrderSizeUnits := 2*(2**numOrders) - 2
+	orders := []*commandspb.OrderSubmission{}
 	
+	sizeF := func(i int) decimal.Decimal {
+		return targetVolume.Div(decimal.NewFromInt(totalOrderSizeUnits).Mul(binanceRefPrice)).Mul(decimal.NewFromInt(2).Pow(decimal.NewFromInt(i)))
+	}
 
+	priceF := func(i int) decimal.Decimal {
+		return binanceRefPrice.Mul(
+			decimal.NewFromInt(1).Sub(decimal.NewFromInt(int64(i)).Mul(decimal.NewFromFloat(0.005)))
+		)
+	}
+
+	if side == vegapb.Side_SIDE_SELL {
+		priceF = func(i int) decimal.Decimal {
+			return binanceRefPrice.Mul(
+				decimal.NewFromInt(1).Add(decimal.NewFromInt(int64(i)).Mul(decimal.NewFromFloat(0.005)))
+			)
+		}	
+	}
+
+	for i := 1; i<=numOrders; i++ {
+		orders = append(orders, &commandspb.OrderSubmission{
+			MarketId:   	marketId,
+			Price:       	priceF(i).Mul(d.priceFactor).BigInt().String(),
+			Size:        	sizeF(i).Mul(d.positionFactor).BigInt().Uint64(),
+			Side:        	side,
+			TimeInForce: 	vegapb.Order_TIME_IN_FORCE_GTT,
+			ExpiresAt:		time.Now().Nanosecond() + 5*1e9
+			Type:        	vegapb.Order_TYPE_LIMIT,
+			Reference:   	"ref",
+		})
+	}
+
+	return orders
 }
 
 func getDecimals(market *vegapb.Market, asset *vegapb.Asset) decimals {
