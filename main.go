@@ -13,7 +13,7 @@ import (
 
 const (
 	defaultAdminPort			= 8080
-	defaultVegaGrpcAddr 		= "tls://vega-mainnet-data-grpc.commodum.io:443" // "vega-data.nodes.guru:3007" "vega-data.bharvest.io:3007" "datanode.vega.pathrocknetwork.org:3007"
+	defaultVegaGrpcAddr 		= "datanode.vega.pathrocknetwork.org:3007" // "vega-mainnet-data-grpc.commodum.io:443" // "vega-data.nodes.guru:3007" "vega-data.bharvest.io:3007" "datanode.vega.pathrocknetwork.org:3007"
 	defaultBinanceWsAddr 		= "wss://stream.binance.com:443/ws"
 	defaultWalletServiceAddr 	= "http://127.0.0.1:1789"
 )
@@ -62,14 +62,13 @@ func main() {
 	// 	log.Fatalf("Could not connect to wallet: %v", err);
 	// }
 
-	// b).
 	store := newDataStore(binanceMarket)
-	client := newDataClient(config, store)
+	dataClient := newDataClient(config, store)
 
-	// c).
-	go client.streamBinanceData()
+	go dataClient.streamBinanceData()
+	go dataClient.streamVegaData()
 
-	//go client.streamVegaData(config, dataStore)
+	go RunStrategy(walletClient, dataClient)
 
 	gracefulStop := make(chan os.Signal, 1)
 	signal.Notify(gracefulStop, syscall.SIGTERM, syscall.SIGINT)

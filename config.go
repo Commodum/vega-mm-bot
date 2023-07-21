@@ -35,9 +35,9 @@ func parseFlags() *Config {
 	// if walletPubkey = getFlag(walletPubkey, os.Getenv("VEGAMM_WALLET_PUBKEY")); len(walletPubkey) <= 0 {
 	// 	log.Fatal("Error: Missing -wallet-pubkey flag")
 	// }
-	// if vegaMarket = getFlag(vegaMarket, os.Getenv("VEGAMM_VEGA_MARKET")); len(vegaMarket) <= 0 {
-	// 	log.Fatal("Error: Missing -vega-market flag")
-	// }
+	if vegaMarket = getFlag(vegaMarket, os.Getenv("VEGAMM_VEGA_MARKET")); len(vegaMarket) <= 0 {
+		log.Fatal("Error: Missing -vega-market flag")
+	}
 	if binanceMarket = getFlag(binanceMarket, os.Getenv("VEGAMM_BINANCE_MARKET")); len(binanceMarket) <= 0 {
 		log.Fatal("Error: Missing -binance-market flag")
 	}

@@ -140,13 +140,13 @@ func (v *VegaStore) GetPosition() *vegapb.Position {
 
 func (b *BinanceStore) Set(bid, ask decimal.Decimal) {
 	b.mu.Lock()
-	defer b.mum.Unlock()
+	defer b.mu.Unlock()
 	b.bestBid, b.bestAsk = bid, ask
 }
 
 
-func (b *BinanceStore) Get(bid, ask decimal.Decimal) {
+func (b *BinanceStore) Get() (bid, ask decimal.Decimal) {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.bestBid, b.bestAsk
+	return b.bestBid.Copy(), b.bestAsk.Copy()
 }
