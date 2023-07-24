@@ -5,28 +5,40 @@ import (
 	"sync"
 
 	// "github.com/gorilla/websocket"
-	"github.com/shopspring/decimal"
 	apipb "code.vegaprotocol.io/vega/protos/data-node/api/v2"
 	vegapb "code.vegaprotocol.io/vega/protos/vega"
+	"github.com/shopspring/decimal"
 	"golang.org/x/exp/maps"
 )
 
 type VegaStore struct {
 	mu sync.RWMutex
 
-	marketId string
-	assets map[string]*vegapb.Asset
-	market *vegapb.Market
+	markets map[string]*VegaData
+}
+
+type VegaData struct {
+	mu sync.RWMutex
+
+	marketId   string
+	assets     map[string]*vegapb.Asset
+	market     *vegapb.Market
 	marketData *vegapb.MarketData
-	accounts map[string]*apipb.AccountBalance
-	orders map[string]*vegapb.Order
-	position *vegapb.Position
+	accounts   map[string]*apipb.AccountBalance
+	orders     map[string]*vegapb.Order
+	position   *vegapb.Position
 }
 
 type BinanceStore struct {
 	mu sync.RWMutex
 
-	market string
+	markets map[string]*BinanceData
+}
+
+type BinanceData struct {
+	mu sync.RWMutex
+
+	market  string
 	bestBid decimal.Decimal
 	bestAsk decimal.Decimal
 }
@@ -38,16 +50,26 @@ type DataStore struct {
 
 func newVegaStore() *VegaStore {
 	return &VegaStore{
-		assets: map[string]*vegapb.Asset{},
+		markets: map[string]*VegaData{},
+	}
+}
+
+func newVegaData() *VegaData {
+	return &VegaData{
+		assets:   map[string]*vegapb.Asset{},
 		accounts: map[string]*apipb.AccountBalance{},
-		orders: map[string]*vegapb.Order{},
+		orders:   map[string]*vegapb.Order{},
 	}
 }
 
 func newBinanceStore(mkt string) *BinanceStore {
 	return &BinanceStore{
-		market: mkt,
+		markets: map[string]*BinanceData{},
 	}
+}
+
+func newBinanceData() *BinanceData {
+	return &BinanceData{}
 }
 
 func newDataStore(binanceMkt string) *DataStore {
@@ -60,22 +82,18 @@ func newDataStore(binanceMkt string) *DataStore {
 func (v *VegaStore) SetMarketId(marketId string) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	v.marketId = marketId
+	v.markets[marketId].marketId = marketId
 }
 
-func (v *VegaStore) GetMarketId() string {
-	v.mu.RLock()
-	defer v.mu.RUnlock()
-	return v.marketId
-}
-
-func (v *VegaStore) SetMarket(market *vegapb.Market) {
+func (v *VegaStore) SetMarket(marketId string, market *vegapb.Market) {
 	v.mu.Lock()
+	v.markets[marketId].mu.Lock()
 	defer v.mu.Unlock()
-	v.market = market
+	defer v.markets[marketId].mu.Unlock()
+	v.markets[marketId].market = market
 }
 
-func (v *VegaStore) GetMarket() *vegapb.Market {
+func (v *VegaStore) GetMarket(marketId) *vegapb.Market {
 	v.mu.RLock()
 	defer v.mu.RUnlock()
 	return v.market
@@ -111,7 +129,7 @@ func (v *VegaStore) SetAccounts(accounts []*apipb.AccountBalance) {
 	defer v.mu.Unlock()
 
 	for _, acc := range accounts {
-		v.accounts[acc.Type.String() + acc.Asset + acc.MarketId] = acc
+		v.accounts[acc.Type.String()+acc.Asset+acc.MarketId] = acc
 	}
 }
 
@@ -130,7 +148,7 @@ func (v *VegaStore) SetOrders(orders []*vegapb.Order) {
 			delete(v.orders, ord.Id)
 			continue
 		}
-		
+
 		v.orders[ord.Id] = ord
 	}
 }
@@ -158,7 +176,6 @@ func (b *BinanceStore) Set(bid, ask decimal.Decimal) {
 	defer b.mu.Unlock()
 	b.bestBid, b.bestAsk = bid, ask
 }
-
 
 func (b *BinanceStore) Get() (bid, ask decimal.Decimal) {
 	b.mu.RLock()
