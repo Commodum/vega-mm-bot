@@ -48,8 +48,8 @@ func parseFlags() *Config {
 		WalletServiceAddr: walletServiceAddr,
 		WalletToken:       walletToken,
 		WalletPubkey:      walletPubkey,
-		VegaMarket:        vegaMarket,
-		BinanceMarket:     binanceMarket,
+		VegaMarkets:       vegaMarkets,
+		BinanceMarkets:    binanceMarkets,
 	}
 }
 
