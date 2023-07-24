@@ -55,8 +55,8 @@ func RunStrategy(walletClient *wallet.Client, dataClient *DataClient) {
 			balance := getPubkeyBalance(dataClient.s.v, pubkey, asset.Id, int64(asset.Details.Decimals))
 
 			// Determine order sizing from position and balance.
-			bidVol := decimal.Max(balance.Mul(decimal.NewFromFloat(0.5)).Sub(decimal.Max(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
-			askVol := decimal.Max(balance.Mul(decimal.NewFromFloat(0.5)).Add(decimal.Min(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
+			bidVol := decimal.Max(balance.Mul(decimal.NewFromFloat(0.8)).Sub(decimal.Max(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
+			askVol := decimal.Max(balance.Mul(decimal.NewFromFloat(0.8)).Add(decimal.Min(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
 
 			log.Printf("Binance best bid: %v, Binance best ask: %v", binanceBestBid, binanceBestAsk)
 			log.Printf("Open volume: %v, entry price: %v, notional exposure: %v", openVol, avgEntryPrice, notionalExposure)
@@ -66,14 +66,16 @@ func RunStrategy(walletClient *wallet.Client, dataClient *DataClient) {
 			// If we are exposed long then asks have no offset while bids have an offset. Vice versa for short exposure.
 			// If exposure is below a threshold in either direction then there set both offsets to 0.
 
-			neutralityThreshold := 0.08
+			rebalanceThreshold := 0.10
+			// rebalanceThresholdLong := 0.10
+			// rebalanceThresholdShort := 0.10
 
 			switch true {
-			case signedExposure.LessThan(balance.Mul(decimal.NewFromFloat(neutralityThreshold)).Mul(decimal.NewFromInt(-1))):
+			case signedExposure.LessThan(balance.Mul(decimal.NewFromFloat(rebalanceThreshold)).Mul(decimal.NewFromInt(-1))):
 				// Push bid, step back ask
 				askOffset = decimal.NewFromFloat(0.0015)
 				break
-			case signedExposure.GreaterThan(balance.Mul(decimal.NewFromFloat(neutralityThreshold))):
+			case signedExposure.GreaterThan(balance.Mul(decimal.NewFromFloat(rebalanceThreshold))):
 				// Push ask, step back bid
 				bidOffset = decimal.NewFromFloat(0.0015)
 				break
@@ -113,7 +115,7 @@ func RunStrategy(walletClient *wallet.Client, dataClient *DataClient) {
 func getOrderSubmission(d decimals, vegaSpread, vegaRefPrice, binanceRefPrice, offset, targetVolume decimal.Decimal, side vegapb.Side, marketId string) []*commandspb.OrderSubmission {
 
 	numOrders := 3
-	totalOrderSizeUnits := 2*int(math.Pow(float64(1.7), float64(numOrders))) - 2
+	totalOrderSizeUnits := 2*int(math.Pow(float64(1.6), float64(numOrders))) - 2
 	orders := []*commandspb.OrderSubmission{}
 
 	sizeF := func(i int) decimal.Decimal {
