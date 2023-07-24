@@ -55,8 +55,8 @@ func RunStrategy(walletClient *wallet.Client, dataClient *DataClient) {
 			balance := getPubkeyBalance(dataClient.s.v, pubkey, asset.Id, int64(asset.Details.Decimals))
 
 			// Determine order sizing from position and balance.
-			bidVol := decimal.Max(balance.Mul(decimal.NewFromFloat(0.7)).Sub(decimal.Max(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
-			askVol := decimal.Max(balance.Mul(decimal.NewFromFloat(0.7)).Add(decimal.Min(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
+			bidVol := decimal.Max(balance.Mul(decimal.NewFromFloat(0.5)).Sub(decimal.Max(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
+			askVol := decimal.Max(balance.Mul(decimal.NewFromFloat(0.5)).Add(decimal.Min(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
 
 			log.Printf("Binance best bid: %v, Binance best ask: %v", binanceBestBid, binanceBestAsk)
 			log.Printf("Open volume: %v, entry price: %v, notional exposure: %v", openVol, avgEntryPrice, notionalExposure)
@@ -112,7 +112,7 @@ func RunStrategy(walletClient *wallet.Client, dataClient *DataClient) {
 
 func getOrderSubmission(d decimals, vegaSpread, vegaRefPrice, binanceRefPrice, offset, targetVolume decimal.Decimal, side vegapb.Side, marketId string) []*commandspb.OrderSubmission {
 
-	numOrders := 4
+	numOrders := 3
 	totalOrderSizeUnits := 2*int(math.Pow(float64(1.7), float64(numOrders))) - 2
 	orders := []*commandspb.OrderSubmission{}
 
