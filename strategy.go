@@ -55,8 +55,8 @@ func RunStrategy(walletClient *wallet.Client, dataClient *DataClient) {
 			balance := getPubkeyBalance(dataClient.s.v, pubkey, asset.Id, int64(asset.Details.Decimals))
 
 			// Determine order sizing from position and balance.
-			bidVol := decimal.Max(balance.Mul(decimal.NewFromFloat(0.7)).Sub(decimal.Max(openVol.Mul(avgEntryPrice).Mul(decimal.NewFromFloat(0.6)), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
-			askVol := decimal.Max(balance.Mul(decimal.NewFromFloat(0.7)).Add(decimal.Min(openVol.Mul(avgEntryPrice).Mul(decimal.NewFromFloat(0.6)), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
+			bidVol := decimal.Max(balance.Mul(decimal.NewFromFloat(0.7)).Sub(decimal.Max(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
+			askVol := decimal.Max(balance.Mul(decimal.NewFromFloat(0.7)).Add(decimal.Min(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
 
 			log.Printf("Binance best bid: %v, Binance best ask: %v", binanceBestBid, binanceBestAsk)
 			log.Printf("Open volume: %v, entry price: %v, notional exposure: %v", openVol, avgEntryPrice, notionalExposure)
@@ -71,11 +71,11 @@ func RunStrategy(walletClient *wallet.Client, dataClient *DataClient) {
 			switch true {
 			case signedExposure.LessThan(balance.Mul(decimal.NewFromFloat(neutralityThreshold)).Mul(decimal.NewFromInt(-1))):
 				// Push bid, step back ask
-				askOffset = decimal.NewFromFloat(0.002)
+				askOffset = decimal.NewFromFloat(0.0015)
 				break
 			case signedExposure.GreaterThan(balance.Mul(decimal.NewFromFloat(neutralityThreshold))):
 				// Push ask, step back bid
-				bidOffset = decimal.NewFromFloat(0.002)
+				bidOffset = decimal.NewFromFloat(0.0015)
 				break
 			}
 
@@ -135,7 +135,7 @@ func getOrderSubmission(d decimals, vegaSpread, vegaRefPrice, binanceRefPrice, o
 		}
 
 		return binanceRefPrice.Mul(
-			decimal.NewFromInt(1).Sub(decimal.NewFromInt(int64(i)).Mul(decimal.NewFromFloat(0.0005))).Sub(offset),
+			decimal.NewFromInt(1).Sub(decimal.NewFromInt(int64(i)).Mul(decimal.NewFromFloat(0.001))).Sub(offset),
 		)
 	}
 
@@ -152,7 +152,7 @@ func getOrderSubmission(d decimals, vegaSpread, vegaRefPrice, binanceRefPrice, o
 			}
 
 			return binanceRefPrice.Mul(
-				decimal.NewFromInt(1).Add(decimal.NewFromInt(int64(i)).Mul(decimal.NewFromFloat(0.0005))).Add(offset),
+				decimal.NewFromInt(1).Add(decimal.NewFromInt(int64(i)).Mul(decimal.NewFromFloat(0.001))).Add(offset),
 			)
 		}
 	}
