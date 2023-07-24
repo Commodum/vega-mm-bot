@@ -8,18 +8,18 @@ import (
 )
 
 type Config struct {
-	VegaGrpcAddr		string
-	BinanceWsAddr		string
-	WalletServiceAddr 	string
-	WalletToken			string
-	WalletPubkey		string
-	VegaMarket			string
-	BinanceMarket		string
+	VegaGrpcAddr      string
+	BinanceWsAddr     string
+	WalletServiceAddr string
+	WalletToken       string
+	WalletPubkey      string
+	VegaMarkets       string
+	BinanceMarkets    string
 }
 
 func parseFlags() *Config {
 	flag.Parse()
-	
+
 	if vegaGrpcAddr = getFlag(vegaGrpcAddr, os.Getenv("VEGAMM_VEGA_GRPC_ADDR")); len(vegaGrpcAddr) <= 0 {
 		vegaGrpcAddr = defaultVegaGrpcAddr
 	}
@@ -35,21 +35,21 @@ func parseFlags() *Config {
 	if walletPubkey = getFlag(walletPubkey, os.Getenv("VEGAMM_WALLET_PUBKEY")); len(walletPubkey) <= 0 {
 		log.Fatal("Error: Missing -wallet-pubkey flag")
 	}
-	if vegaMarket = getFlag(vegaMarket, os.Getenv("VEGAMM_VEGA_MARKET")); len(vegaMarket) <= 0 {
-		log.Fatal("Error: Missing -vega-market flag")
+	if vegaMarkets = getFlag(vegaMarkets, os.Getenv("VEGAMM_VEGA_MARKETS")); len(vegaMarkets) <= 0 {
+		log.Fatal("Error: Missing -vega-markets flag")
 	}
-	if binanceMarket = getFlag(binanceMarket, os.Getenv("VEGAMM_BINANCE_MARKET")); len(binanceMarket) <= 0 {
-		log.Fatal("Error: Missing -binance-market flag")
+	if binanceMarkets = getFlag(binanceMarkets, os.Getenv("VEGAMM_BINANCE_MARKETS")); len(binanceMarkets) <= 0 {
+		log.Fatal("Error: Missing -binance-markets flag")
 	}
 
 	return &Config{
-		VegaGrpcAddr: vegaGrpcAddr,
-		BinanceWsAddr: binanceWsAddr,
+		VegaGrpcAddr:      vegaGrpcAddr,
+		BinanceWsAddr:     binanceWsAddr,
 		WalletServiceAddr: walletServiceAddr,
-		WalletToken: walletToken,
-		WalletPubkey: walletPubkey,
-		VegaMarket: vegaMarket,
-		BinanceMarket: binanceMarket,
+		WalletToken:       walletToken,
+		WalletPubkey:      walletPubkey,
+		VegaMarket:        vegaMarket,
+		BinanceMarket:     binanceMarket,
 	}
 }
 

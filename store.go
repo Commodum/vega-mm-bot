@@ -14,12 +14,6 @@ import (
 type VegaStore struct {
 	mu sync.RWMutex
 
-	markets map[string]*VegaData
-}
-
-type VegaData struct {
-	mu sync.RWMutex
-
 	marketId   string
 	assets     map[string]*vegapb.Asset
 	market     *vegapb.Market
@@ -32,30 +26,18 @@ type VegaData struct {
 type BinanceStore struct {
 	mu sync.RWMutex
 
-	markets map[string]*BinanceData
-}
-
-type BinanceData struct {
-	mu sync.RWMutex
-
 	market  string
 	bestBid decimal.Decimal
 	bestAsk decimal.Decimal
 }
 
 type DataStore struct {
-	v *VegaStore
-	b *BinanceStore
+	v map[string]*VegaStore
+	b map[string]*BinanceStore
 }
 
 func newVegaStore() *VegaStore {
 	return &VegaStore{
-		markets: map[string]*VegaData{},
-	}
-}
-
-func newVegaData() *VegaData {
-	return &VegaData{
 		assets:   map[string]*vegapb.Asset{},
 		accounts: map[string]*apipb.AccountBalance{},
 		orders:   map[string]*vegapb.Order{},
@@ -64,36 +46,30 @@ func newVegaData() *VegaData {
 
 func newBinanceStore(mkt string) *BinanceStore {
 	return &BinanceStore{
-		markets: map[string]*BinanceData{},
+		market: mkt,
 	}
 }
 
-func newBinanceData() *BinanceData {
-	return &BinanceData{}
-}
-
-func newDataStore(binanceMkt string) *DataStore {
+func newDataStore() *DataStore {
 	return &DataStore{
-		v: newVegaStore(),
-		b: newBinanceStore(binanceMkt),
+		v: map[string]*VegaStore{},
+		b: map[string]*BinanceStore{},
 	}
 }
 
 func (v *VegaStore) SetMarketId(marketId string) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	v.markets[marketId].marketId = marketId
+	v.marketId = marketId
 }
 
-func (v *VegaStore) SetMarket(marketId string, market *vegapb.Market) {
+func (v *VegaStore) SetMarket(market *vegapb.Market) {
 	v.mu.Lock()
-	v.markets[marketId].mu.Lock()
 	defer v.mu.Unlock()
-	defer v.markets[marketId].mu.Unlock()
-	v.markets[marketId].market = market
+	v.market = market
 }
 
-func (v *VegaStore) GetMarket(marketId) *vegapb.Market {
+func (v *VegaStore) GetMarket() *vegapb.Market {
 	v.mu.RLock()
 	defer v.mu.RUnlock()
 	return v.market

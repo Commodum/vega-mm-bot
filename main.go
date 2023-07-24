@@ -18,8 +18,10 @@ const (
 	defaultBinanceWsAddr     = "wss://stream.binance.com:443/ws"
 	defaultWalletServiceAddr = "http://127.0.0.1:1789"
 	defaultWalletPubkey      = ""
-	defaultVegaMarket        = "5b05109662e7434fea498c4a1c91d3179b80e9b8950d6106cec60e1f342fc604"
-	defaultBinanceMarket     = "BTCUSDT"
+	defaultVegaMarket        = ""
+	defaultBinanceMarket     = ""
+	defaultVegaMarkets       = "5b05109662e7434fea498c4a1c91d3179b80e9b8950d6106cec60e1f342fc604,2c2ea995d7366e423be7604f63ce047aa7186eb030ecc7b77395eae2fcbffcc5,074c929bba8faeeeba352b2569fc5360a59e12cdcbf60f915b492c4ac228b566"
+	defaultBinanceMarkets    = "BTCUSDT,ETHUSDT,LINKUSDT"
 )
 
 var (
@@ -29,8 +31,8 @@ var (
 	walletServiceAddr string
 	walletToken       string
 	walletPubkey      string
-	vegaMarket        string
-	binanceMarket     string
+	vegaMarkets       string
+	binanceMarkets    string
 )
 
 func init() {
@@ -41,8 +43,8 @@ func init() {
 	flag.StringVar(&walletServiceAddr, "wallet-service-addr", defaultWalletServiceAddr, "A vega wallet service address")
 	flag.StringVar(&walletToken, "wallet-token", "", "a vega wallet token (for info see vega wallet token-api -h)")
 	flag.StringVar(&walletPubkey, "wallet-pubkey", defaultWalletPubkey, "a vega public key")
-	flag.StringVar(&vegaMarket, "vega-market", defaultVegaMarket, "a vega market id")
-	flag.StringVar(&binanceMarket, "binance-market", defaultBinanceMarket, "a binance market symbol")
+	flag.StringVar(&vegaMarkets, "vega-markets", defaultVegaMarkets, "a comma separated list of market IDs")
+	flag.StringVar(&binanceMarkets, "binance-markets", defaultBinanceMarkets, "a comma separated list of Binance markets")
 
 }
 
@@ -65,7 +67,7 @@ func main() {
 		log.Fatalf("Could not connect to wallet: %v", err)
 	}
 
-	store := newDataStore(binanceMarket)
+	store := newDataStore()
 	dataClient := newDataClient(config, store)
 
 	var wg sync.WaitGroup
