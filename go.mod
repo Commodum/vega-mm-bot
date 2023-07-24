@@ -4,8 +4,8 @@ go 1.20
 
 require (
 	code.vegaprotocol.io/vega v0.71.6
-	github.com/davecgh/go-spew v1.1.1
 	github.com/gorilla/websocket v1.5.0
+	github.com/jeremyletang/vega-go-sdk v0.0.0-20230123175705-c0e54d7c02f5
 	github.com/shopspring/decimal v1.3.1
 	golang.org/x/exp v0.0.0-20230206171751-46f607a40771
 	google.golang.org/grpc v1.53.0

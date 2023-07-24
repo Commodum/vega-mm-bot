@@ -1,136 +1,173 @@
 package main
 
 import (
-	"fmt"
-	"log"
 	"context"
+	"log"
+	"math"
+	"time"
 
 	vegapb "code.vegaprotocol.io/vega/protos/vega"
 	commandspb "code.vegaprotocol.io/vega/protos/vega/commands/v1"
 	walletpb "code.vegaprotocol.io/vega/protos/vega/wallet/v1"
 	"github.com/jeremyletang/vega-go-sdk/wallet"
 	"github.com/shopspring/decimal"
-	
 )
 
 type decimals struct {
-	positionFactor	decimal.Decimal
-	priceFactor		decimal.Decimal
+	positionFactor decimal.Decimal
+	priceFactor    decimal.Decimal
 }
 
 func RunStrategy(walletClient *wallet.Client, dataClient *DataClient) {
 
-	for range time.NewTicker(2 * time.Second).C {
-		log.Printf("Running trading strategy...")
+	for range time.NewTicker(1500 * time.Millisecond).C {
+		log.Printf("Executing strategy...")
 
 		var (
-			marketId = dataClient.c.VegaMarket
-			pubkey = dataclient.c.WalletPubkey
-			bidOffset decimal.Decimal
-			askOffset decimal.Decimal
+			marketId  = dataClient.c.VegaMarket
+			pubkey    = dataClient.c.WalletPubkey
+			bidOffset = decimal.NewFromInt(0)
+			askOffset = decimal.NewFromInt(0)
 		)
 
 		// Get market
-		if market := dataClient.s.v.Getmarket(); market != nil {
-			asset := vega.GetAsset(
-				mkt.GetTradableInstrument().
+		if market := dataClient.s.v.GetMarket(); market != nil {
+			asset := dataClient.s.v.GetAsset(
+				market.GetTradableInstrument().
 					GetInstrument().
 					GetFuture().
 					GetSettlementAsset(),
 			)
 
-			d = getDecimals(market, asset)
+			d := getDecimals(market, asset)
 
-			vegaBestBid := dataClient.s.v.GetMarketData().GetBestBidPrice()
-			vegaBestAsk := dataClient.s.v.GetMarketData().GetBestOfferPrice()
+			vegaBestBid, _ := decimal.NewFromString(dataClient.s.v.GetMarketData().GetBestBidPrice())
+			vegaBestAsk, _ := decimal.NewFromString(dataClient.s.v.GetMarketData().GetBestOfferPrice())
+			vegaSpread := vegaBestAsk.Sub(vegaBestBid)
 			binanceBestBid, binanceBestAsk := dataClient.s.b.Get()
 
-			avgEntryPrice, openVol := getEntryPriceAndVolume(d, market, dataClient.v.GetPosition())
+			log.Printf("Vega best bid: %v, Vega best ask: %v", vegaBestBid, vegaBestAsk)
+			log.Printf("Vega spread: %v", vegaSpread)
+
+			openVol, avgEntryPrice := getEntryPriceAndVolume(d, market, dataClient.s.v.GetPosition())
 			notionalExposure := avgEntryPrice.Mul(openVol).Abs()
 			signedExposure := avgEntryPrice.Mul(openVol)
-			balance := getPubkeyBalance(dataClient.v, pubkey, asset.Id, int64(asset.Details.Decimals))
+			balance := getPubkeyBalance(dataClient.s.v, pubkey, asset.Id, int64(asset.Details.Decimals))
 
 			// Determine order sizing from position and balance.
-			// We will use fixed ratios to determine order sizing from the available balance
+			bidVol := decimal.Max(balance.Mul(decimal.NewFromFloat(0.7)).Sub(decimal.Max(openVol.Mul(avgEntryPrice).Mul(decimal.NewFromFloat(0.6)), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
+			askVol := decimal.Max(balance.Mul(decimal.NewFromFloat(0.7)).Add(decimal.Min(openVol.Mul(avgEntryPrice).Mul(decimal.NewFromFloat(0.6)), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
 
-			bidVol := decimal.Max(balance.Mul(decimal.NewFromFloat(0.5)).Sub(openVol.Mul(avgEntryPrice)), decimal.NewFromFloat(0))
-			askVol := decimal.Max(balance.Mul(decimal.NewFromFloat(0.5)).Add(openVol.Mul(avgEntryPrice)), decimal.NewFromFloat(0))
+			log.Printf("Binance best bid: %v, Binance best ask: %v", binanceBestBid, binanceBestAsk)
+			log.Printf("Open volume: %v, entry price: %v, notional exposure: %v", openVol, avgEntryPrice, notionalExposure)
+			log.Printf("Bid volume: %v, ask volume: %v", bidVol, askVol)
 
 			// Use the current position to determine the offset from the reference price for each order submission.
 			// If we are exposed long then asks have no offset while bids have an offset. Vice versa for short exposure.
 			// If exposure is below a threshold in either direction then there set both offsets to 0.
 
-			neutralityThreshold := 0.02
+			neutralityThreshold := 0.08
 
 			switch true {
-				case signedExposure < balance.Mul(decimal.NewFromFloat(neutralityThreshold)).Mul(decimal.NewFromInt(-1)):
-					// Push bid, step back ask
-					askOffset = decimal.NewFromFloat(0.002)
-					break;
-				case signedExposure > balance.Mul(decimal.NewFromFloat(neutralityThreshold)):
-					// Push ask, step back bid
-					bidOffset = decimal.NewFromFloat(0.002)
-					break;
+			case signedExposure.LessThan(balance.Mul(decimal.NewFromFloat(neutralityThreshold)).Mul(decimal.NewFromInt(-1))):
+				// Push bid, step back ask
+				askOffset = decimal.NewFromFloat(0.002)
+				break
+			case signedExposure.GreaterThan(balance.Mul(decimal.NewFromFloat(neutralityThreshold))):
+				// Push ask, step back bid
+				bidOffset = decimal.NewFromFloat(0.002)
+				break
 			}
 
 			batch := commandspb.BatchMarketInstructions{
 				Cancellations: []*commandspb.OrderCancellation{
 					{
-						MarketId: marketId
-					}
+						MarketId: marketId,
+					},
 				},
-				Submissions: {
-					append(
-						getOrderSubmission(d, vegaBestBid, binanceBestBid, bidOffset, bidVol, vegapb.Side_SIDE_BUY, marketId),
-						getOrderSubmission(d, vegaBestAsk, binanceBestAsk, askOffset, askVol, vegapb.Side_SIDE_SELL, marketId)...,
-					),
-				}
+				Submissions: append(
+					getOrderSubmission(d, vegaSpread, vegaBestBid, binanceBestBid, bidOffset, bidVol, vegapb.Side_SIDE_BUY, marketId),
+					getOrderSubmission(d, vegaSpread, vegaBestAsk, binanceBestAsk, askOffset, askVol, vegapb.Side_SIDE_SELL, marketId)...,
+				),
 			}
 
+			// Send transaction
+			err := walletClient.SendTransaction(
+				context.Background(), pubkey, &walletpb.SubmitTransactionRequest{
+					Command: &walletpb.SubmitTransactionRequest_BatchMarketInstructions{
+						BatchMarketInstructions: &batch,
+					},
+				},
+			)
+
+			if err != nil {
+				log.Printf("Error subitting the batch: %v", err)
+			}
+
+			// log.Printf("Batch market instructions: %v", batch.String())
+
 		}
-
-		// Create batch market instructions
-
-		// Send transaction
-
 	}
-
 }
 
-func GetOrderSubmission(d decimals, vegaRefPrice, binanceRefPrice, offset, targetVolume decimal.Decimal, side vegapb.Side, marketId string) []*commandspb.OrderSubmission {
+func getOrderSubmission(d decimals, vegaSpread, vegaRefPrice, binanceRefPrice, offset, targetVolume decimal.Decimal, side vegapb.Side, marketId string) []*commandspb.OrderSubmission {
 
-	numOrders := 5;
-	totalOrderSizeUnits := 2*(2**numOrders) - 2
+	numOrders := 4
+	totalOrderSizeUnits := 2*int(math.Pow(float64(1.7), float64(numOrders))) - 2
 	orders := []*commandspb.OrderSubmission{}
-	
+
 	sizeF := func(i int) decimal.Decimal {
-		return targetVolume.Div(decimal.NewFromInt(totalOrderSizeUnits).Mul(binanceRefPrice)).Mul(decimal.NewFromInt(2).Pow(decimal.NewFromInt(i)))
+		return decimal.Max(
+			targetVolume.Div(decimal.NewFromInt(int64(totalOrderSizeUnits)).Mul(binanceRefPrice)).Mul(decimal.NewFromInt(2).Pow(decimal.NewFromInt(int64(i+1)))),
+			decimal.NewFromInt(1).Div(d.positionFactor),
+		)
 	}
 
 	priceF := func(i int) decimal.Decimal {
+
+		if i == 1 && offset.IsZero() {
+			// First order, push it to the front of the book
+			log.Printf("Pushing bid to front of book")
+			if vegaSpread.GreaterThan(decimal.NewFromInt(1)) {
+				return vegaRefPrice.Div(d.priceFactor).Add(decimal.NewFromInt(1).Div(d.priceFactor))
+			}
+			return vegaRefPrice.Div(d.priceFactor)
+		}
+
 		return binanceRefPrice.Mul(
-			decimal.NewFromInt(1).Sub(decimal.NewFromInt(int64(i)).Mul(decimal.NewFromFloat(0.005)))
+			decimal.NewFromInt(1).Sub(decimal.NewFromInt(int64(i)).Mul(decimal.NewFromFloat(0.0005))).Sub(offset),
 		)
 	}
 
 	if side == vegapb.Side_SIDE_SELL {
 		priceF = func(i int) decimal.Decimal {
+
+			if i == 1 && offset.IsZero() {
+				// First order, push it to the front of the book
+				log.Printf("Pushing ask to front of book")
+				if vegaSpread.GreaterThan(decimal.NewFromInt(1)) {
+					return vegaRefPrice.Div(d.priceFactor).Sub(decimal.NewFromInt(1).Div(d.priceFactor))
+				}
+				return vegaRefPrice.Div(d.priceFactor)
+			}
+
 			return binanceRefPrice.Mul(
-				decimal.NewFromInt(1).Add(decimal.NewFromInt(int64(i)).Mul(decimal.NewFromFloat(0.005)))
+				decimal.NewFromInt(1).Add(decimal.NewFromInt(int64(i)).Mul(decimal.NewFromFloat(0.0005))).Add(offset),
 			)
-		}	
+		}
 	}
 
-	for i := 1; i<=numOrders; i++ {
+	for i := 1; i <= numOrders; i++ {
 		orders = append(orders, &commandspb.OrderSubmission{
-			MarketId:   	marketId,
-			Price:       	priceF(i).Mul(d.priceFactor).BigInt().String(),
-			Size:        	sizeF(i).Mul(d.positionFactor).BigInt().Uint64(),
-			Side:        	side,
-			TimeInForce: 	vegapb.Order_TIME_IN_FORCE_GTT,
-			ExpiresAt:		time.Now().Nanosecond() + 5*1e9
-			Type:        	vegapb.Order_TYPE_LIMIT,
-			Reference:   	"ref",
+			MarketId:    marketId,
+			Price:       priceF(i).Mul(d.priceFactor).BigInt().String(),
+			Size:        sizeF(i).Mul(d.positionFactor).BigInt().Uint64(),
+			Side:        side,
+			TimeInForce: vegapb.Order_TIME_IN_FORCE_GTT,
+			ExpiresAt:   int64(time.Now().UnixNano() + 5*1e9),
+			Type:        vegapb.Order_TYPE_LIMIT,
+			PostOnly:    true,
+			Reference:   "ref",
 		})
 	}
 
@@ -140,30 +177,30 @@ func GetOrderSubmission(d decimals, vegaRefPrice, binanceRefPrice, offset, targe
 func getDecimals(market *vegapb.Market, asset *vegapb.Asset) decimals {
 	return decimals{
 		positionFactor: decimal.NewFromFloat(10).Pow(decimal.NewFromInt(market.PositionDecimalPlaces)),
-		priceFactor: decimal.NewFromFoat(10).Pow(decimal.NewFromInt(int64(market.DecimalPlaces))),
+		priceFactor:    decimal.NewFromFloat(10).Pow(decimal.NewFromInt(int64(market.DecimalPlaces))),
 	}
 }
 
-func getEntryPriceAndVolume(d decimals, market *vegapb.Market, position *evgapb.Position) (volume, entryPrice decimal.Decimal) {
+func getEntryPriceAndVolume(d decimals, market *vegapb.Market, position *vegapb.Position) (volume, entryPrice decimal.Decimal) {
 
-	if pos == nil {
+	if position == nil {
 		return
 	}
 
-	volume = decimal.NewFromInt(pos.OpenVolume)
-	entryPrice = decimal.NewFromString(pos.AverageEntryPrice)
+	volume = decimal.NewFromInt(position.OpenVolume)
+	entryPrice, _ = decimal.NewFromString(position.AverageEntryPrice)
 
-	return vol.Div(d.positionFactor), entryPrice.Div(d.priceFactor)
+	return volume.Div(d.positionFactor), entryPrice.Div(d.priceFactor)
 }
 
-func getPubkeyBalance(vega *VegaStore, pubkey, asset string, decimalPlaces int64) d decimal.Decimal {
+func getPubkeyBalance(vega *VegaStore, pubkey, asset string, decimalPlaces int64) (d decimal.Decimal) {
 
 	for _, acc := range vega.GetAccounts() {
 		if acc.Owner != pubkey || acc.Asset != asset {
 			continue
 		}
 
-		balance, _ = decimal.NewFromString(acc.Balance)
+		balance, _ := decimal.NewFromString(acc.Balance)
 		d = d.Add(balance)
 	}
 

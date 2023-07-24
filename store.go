@@ -15,6 +15,7 @@ type VegaStore struct {
 	mu sync.RWMutex
 
 	marketId string
+	assets map[string]*vegapb.Asset
 	market *vegapb.Market
 	marketData *vegapb.MarketData
 	accounts map[string]*apipb.AccountBalance
@@ -37,6 +38,7 @@ type DataStore struct {
 
 func newVegaStore() *VegaStore {
 	return &VegaStore{
+		assets: map[string]*vegapb.Asset{},
 		accounts: map[string]*apipb.AccountBalance{},
 		orders: map[string]*vegapb.Order{},
 	}
@@ -77,6 +79,19 @@ func (v *VegaStore) GetMarket() *vegapb.Market {
 	v.mu.RLock()
 	defer v.mu.RUnlock()
 	return v.market
+}
+
+func (v *VegaStore) SetAsset(asset *vegapb.Asset) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+
+	v.assets[asset.Id] = asset
+}
+
+func (v *VegaStore) GetAsset(assetId string) *vegapb.Asset {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.assets[assetId]
 }
 
 func (v *VegaStore) SetMarketData(marketData *vegapb.MarketData) {

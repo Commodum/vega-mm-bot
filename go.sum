@@ -7,7 +7,6 @@ github.com/confio/ics23/go v0.7.0 h1:00d2kukk7sPoHWL4zZBZwzxnpA2pec1NPdwbSokJ5w8
 github.com/cosmos/gorocksdb v1.2.0 h1:d0l3jJG8M4hBouIZq0mDUHZ+zjOx044J3nGRskwTb4Y=
 github.com/cosmos/iavl v0.19.4 h1:t82sN+Y0WeqxDLJRSpNd8YFX5URIrT+p8n6oJbJ2Dok=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
-github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/dgraph-io/badger v1.6.2 h1:mNw0qs90GVgGGWylh0umH5iag1j6n/PeJtNvL6KY/x8=
 github.com/dgraph-io/badger/v2 v2.2007.4 h1:TRWBQg8UrlUhaFdco01nO2uXwzKS7zd+HVdwV/GHc4o=
 github.com/dgraph-io/ristretto v0.0.3-0.20200630154024-f66de99634de h1:t0UHb5vdojIDUqktM6+xJAfScFBsVpXZmqC9dsgJmeA=
@@ -29,6 +28,8 @@ github.com/gorilla/websocket v1.5.0/go.mod h1:YR8l580nyteQvAITg2hZ9XVh4b55+EU/ad
 github.com/grpc-ecosystem/grpc-gateway/v2 v2.9.0 h1:SLkFeyLhrg86Ny5Wme4MGGace7EHfgsb07uWX/QUGEQ=
 github.com/grpc-ecosystem/grpc-gateway/v2 v2.9.0/go.mod h1:z5aB5opCfWSoAzCrC18hMgjy4oWJ2dPXkn+f3kqTHxI=
 github.com/holiman/uint256 v1.2.2-0.20230321075855-87b91420868c h1:DZfsyhDK1hnSS5lH8l+JggqzEleHteTYfutAiVlSUM8=
+github.com/jeremyletang/vega-go-sdk v0.0.0-20230123175705-c0e54d7c02f5 h1:wS1xNgEMVxE4ERHAhU/kA27M+pkRUJJbEQ0q/dpZrcU=
+github.com/jeremyletang/vega-go-sdk v0.0.0-20230123175705-c0e54d7c02f5/go.mod h1:3Jdpb+oNnscKcz8ooh0/Qqc8UJpGDZQ5ihePy22BBGI=
 github.com/jmhodges/levigo v1.0.0 h1:q5EC36kV79HWeTBWsod3mG11EgStG3qArTKcvlksN1U=
 github.com/klauspost/compress v1.15.15 h1:EF27CXIuDsYJ6mmvtBRlEuB2UVOqHG1tAXgZ7yIO+lw=
 github.com/oasisprotocol/curve25519-voi v0.0.0-20220317090546-adb2f9614b17 h1:pxR+aWfo+famermIZvD+SiDQ3qmF7Iy2VPZuEsKTMtA=

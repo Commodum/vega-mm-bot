@@ -29,12 +29,12 @@ func parseFlags() *Config {
 	if walletServiceAddr = getFlag(walletServiceAddr, os.Getenv("VEGAMM_WALLET_SERVICE_ADDR")); len(walletServiceAddr) <= 0 {
 		walletServiceAddr = defaultWalletServiceAddr
 	}
-	// if walletToken = getFlag(walletToken, os.Getenv("VEGAMM_WALLET_TOKEN")); len(walletToken) <= 0 {
-	// 	log.Fatal("Error: Missing -wallet-token flag")
-	// }
-	// if walletPubkey = getFlag(walletPubkey, os.Getenv("VEGAMM_WALLET_PUBKEY")); len(walletPubkey) <= 0 {
-	// 	log.Fatal("Error: Missing -wallet-pubkey flag")
-	// }
+	if walletToken = getFlag(walletToken, os.Getenv("VEGAMM_WALLET_TOKEN")); len(walletToken) <= 0 {
+		log.Fatal("Error: Missing -wallet-token flag")
+	}
+	if walletPubkey = getFlag(walletPubkey, os.Getenv("VEGAMM_WALLET_PUBKEY")); len(walletPubkey) <= 0 {
+		log.Fatal("Error: Missing -wallet-pubkey flag")
+	}
 	if vegaMarket = getFlag(vegaMarket, os.Getenv("VEGAMM_VEGA_MARKET")); len(vegaMarket) <= 0 {
 		log.Fatal("Error: Missing -vega-market flag")
 	}

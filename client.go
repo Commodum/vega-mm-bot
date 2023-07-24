@@ -6,8 +6,9 @@ import (
 	"encoding/json"
 	"strings"
 	"context"
+	"sync"
 
-	"github.com/davecgh/go-spew/spew"
+	// "github.com/davecgh/go-spew/spew"
 	"github.com/gorilla/websocket"
 	"github.com/shopspring/decimal"
 	apipb "code.vegaprotocol.io/vega/protos/data-node/api/v2"
@@ -49,9 +50,9 @@ func newDataClient(config *Config, store *DataStore) *DataClient {
 }
 
 
-func (d *DataClient) streamBinanceData() {
+func (d *DataClient) streamBinanceData(wg *sync.WaitGroup) {
 
-	conn, _, err := websocket.DefaultDialer.Dial(d.b.wsAddr, nil);
+	conn, _, err := websocket.DefaultDialer.Dial(d.b.wsAddr, nil)
 	if err != nil {
 		log.Fatal("Dial Error: ", err)
 	}
@@ -77,6 +78,7 @@ func (d *DataClient) streamBinanceData() {
 	if err != nil {
 		log.Fatalf("Could not read from Binance websocket: %v", err)
 	}
+	wg.Done()
 
 	response := struct {
 		Type 		string			`json:"e"`
@@ -92,8 +94,16 @@ func (d *DataClient) streamBinanceData() {
 	for {
 		_, msg, err := conn.ReadMessage()
 		if err != nil {
-			fmt.Println(string(out))
-			log.Fatalf("Could not read message from websocket: %v", err)
+			fmt.Println(err)
+			log.Printf("Could not read message from websocket... Reconnecting...")
+			conn.Close()
+
+			conn, _, err = websocket.DefaultDialer.Dial(d.b.wsAddr, nil)
+			if err != nil {
+				log.Fatal("Dial Error: ", err)
+			}
+			log.Printf("Reconnected to Binance WS")
+			// log.Fatalf("Could not read message from websocket: %v", err)
 		}
 
 		err = json.Unmarshal(msg, &response)
@@ -102,7 +112,7 @@ func (d *DataClient) streamBinanceData() {
 		}
 
 		// fmt.Println(string(msg))
-		fmt.Printf("Response Data: %+v\n", response)
+		// fmt.Printf("Response Data: %+v\n", response)
 
 		// Check content of response.
 
@@ -123,7 +133,7 @@ func (d *DataClient) streamBinanceData() {
 // 	position *vegapb.Position
 // }
 
-func (d *DataClient) streamVegaData() {
+func (d *DataClient) streamVegaData(wg *sync.WaitGroup) {
 
 	conn, err := grpc.Dial(d.c.VegaGrpcAddr , grpc.WithInsecure())
 	if err != nil {
@@ -138,8 +148,9 @@ func (d *DataClient) streamVegaData() {
 	d.v.loadAccounts(d.c, d.s)
 	d.v.loadOrders(d.c, d.s)
 	d.v.loadPosition(d.c, d.s)
+	d.v.loadAsset(d.c, d.s)
 
-	spew.Dump(d.s.v)
+	// spew.Dump(d.s.v)
 
 	// Start streams
 	go d.v.streamMarketData(d.c, d.s)
@@ -147,6 +158,7 @@ func (d *DataClient) streamVegaData() {
 	go d.v.streamOrders(d.c, d.s)
 	go d.v.streamPosition(d.c, d.s)
 
+	wg.Done()
 }
 
 func (v *VegaClient) loadMarket(config *Config, store *DataStore) {
@@ -202,8 +214,6 @@ func (v *VegaClient) loadOrders(config *Config, store *DataStore) {
 	store.v.SetOrders(orders)
 }
 
-
-
 func (v *VegaClient) loadPosition(config *Config, store *DataStore) {
 
 	res, err := v.svc.ListPositions(context.Background(), &apipb.ListPositionsRequest{PartyId: config.WalletPubkey, MarketId: config.VegaMarket})
@@ -220,6 +230,18 @@ func (v *VegaClient) loadPosition(config *Config, store *DataStore) {
 	}
 }
 
+func (v *VegaClient) loadAsset(config *Config, store *DataStore) {
+
+	res, err := v.svc.ListAssets(context.Background(), &apipb.ListAssetsRequest{})
+	if err != nil {
+		log.Fatalf("Couldn't load assets: %v", err)
+	}
+
+	for _, a := range res.Assets.Edges {
+		store.v.SetAsset(a.Node)
+	}
+}
+
 func (v *VegaClient) streamMarketData(config *Config, store *DataStore) {
 
 	stream, err := v.svc.ObserveMarketsData(context.Background(), &apipb.ObserveMarketsDataRequest{MarketIds: []string{config.VegaMarket}})
@@ -233,7 +255,7 @@ func (v *VegaClient) streamMarketData(config *Config, store *DataStore) {
 			log.Fatalf("Could not recieve on market data stream: %v", err)
 		}
 
-		fmt.Printf("Received market data on stream: %+v", res)
+		// fmt.Printf("Received market data on stream: %+v", res)
 		
 		for _, md := range res.MarketData {
 			store.v.SetMarketData(md)
@@ -254,7 +276,7 @@ func (v *VegaClient) streamAccounts(config *Config, store *DataStore) {
 			log.Fatalf("Could not recieve on accounts stream: %v", err)
 		}
 
-		fmt.Printf("Received accounts on stream: %+v", res)
+		// fmt.Printf("Received accounts on stream: %+v", res)
 		
 		switch r := res.Response.(type) {
 			case *apipb.ObserveAccountsResponse_Snapshot:
@@ -278,7 +300,7 @@ func (v *VegaClient) streamOrders(config *Config, store *DataStore) {
 			log.Fatalf("Could not recieve on orders stream: %v", err)
 		}
 
-		fmt.Printf("Received orders on stream: %+v", res)
+		// fmt.Printf("Received orders on stream: %+v", res)
 
 		switch r := res.Response.(type) {
 			case *apipb.ObserveOrdersResponse_Snapshot:
@@ -302,7 +324,7 @@ func (v *VegaClient) streamPosition(config *Config, store *DataStore) {
 			log.Fatalf("Could not recieve on positions stream: %v", err)
 		}
 
-		fmt.Printf("Received position on stream: %+v", res)
+		// fmt.Printf("Received position on stream: %+v", res)
 		
 		switch r := res.Response.(type) {
 			case *apipb.ObservePositionsResponse_Snapshot:

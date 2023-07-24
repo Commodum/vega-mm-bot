@@ -1,32 +1,36 @@
 package main
 
 import (
-	"fmt"
 	"flag"
+	"fmt"
+	"log"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
-	"log"
 
-	// wallet "github.com/jeremyletang/vega-go-sdk/wallet"
+	wallet "github.com/jeremyletang/vega-go-sdk/wallet"
 )
 
 const (
-	defaultAdminPort			= 8080
-	defaultVegaGrpcAddr 		= "datanode.vega.pathrocknetwork.org:3007" // "vega-mainnet-data-grpc.commodum.io:443" // "vega-data.nodes.guru:3007" "vega-data.bharvest.io:3007" "datanode.vega.pathrocknetwork.org:3007"
-	defaultBinanceWsAddr 		= "wss://stream.binance.com:443/ws"
-	defaultWalletServiceAddr 	= "http://127.0.0.1:1789"
+	defaultAdminPort         = 8080
+	defaultVegaGrpcAddr      = "datanode.vega.pathrocknetwork.org:3007" // "vega-mainnet-data-grpc.commodum.io:443" // "vega-data.nodes.guru:3007" "vega-data.bharvest.io:3007" "datanode.vega.pathrocknetwork.org:3007"
+	defaultBinanceWsAddr     = "wss://stream.binance.com:443/ws"
+	defaultWalletServiceAddr = "http://127.0.0.1:1789"
+	defaultWalletPubkey      = ""
+	defaultVegaMarket        = "5b05109662e7434fea498c4a1c91d3179b80e9b8950d6106cec60e1f342fc604"
+	defaultBinanceMarket     = "BTCUSDT"
 )
 
 var (
-	adminPort 			uint
-	vegaGrpcAddr		string
-	binanceWsAddr		string
-	walletServiceAddr 	string
-	walletToken			string
-	walletPubkey		string
-	vegaMarket			string
-	binanceMarket		string
+	adminPort         uint
+	vegaGrpcAddr      string
+	binanceWsAddr     string
+	walletServiceAddr string
+	walletToken       string
+	walletPubkey      string
+	vegaMarket        string
+	binanceMarket     string
 )
 
 func init() {
@@ -36,10 +40,9 @@ func init() {
 	flag.StringVar(&binanceWsAddr, "binance-ws-addr", defaultBinanceWsAddr, "A Binance websocket url")
 	flag.StringVar(&walletServiceAddr, "wallet-service-addr", defaultWalletServiceAddr, "A vega wallet service address")
 	flag.StringVar(&walletToken, "wallet-token", "", "a vega wallet token (for info see vega wallet token-api -h)")
-	flag.StringVar(&walletPubkey, "wallet-pubkey", "", "a vega public key")
-	flag.StringVar(&vegaMarket, "vega-market", "", "a vega market id")
-	flag.StringVar(&binanceMarket, "binance-market", "", "a binance market symbol")
-
+	flag.StringVar(&walletPubkey, "wallet-pubkey", defaultWalletPubkey, "a vega public key")
+	flag.StringVar(&vegaMarket, "vega-market", defaultVegaMarket, "a vega market id")
+	flag.StringVar(&binanceMarket, "binance-market", defaultBinanceMarket, "a binance market symbol")
 
 }
 
@@ -57,16 +60,21 @@ func main() {
 	config := parseFlags()
 
 	// a).
-	// w, err := wallet.NewClient(defaultWalletServiceAddr, config.WalletToken)
-	// if err != nil {
-	// 	log.Fatalf("Could not connect to wallet: %v", err);
-	// }
+	walletClient, err := wallet.NewClient(defaultWalletServiceAddr, config.WalletToken)
+	if err != nil {
+		log.Fatalf("Could not connect to wallet: %v", err)
+	}
 
 	store := newDataStore(binanceMarket)
 	dataClient := newDataClient(config, store)
 
-	go dataClient.streamBinanceData()
-	go dataClient.streamVegaData()
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go dataClient.streamBinanceData(&wg)
+	go dataClient.streamVegaData(&wg)
+
+	wg.Wait()
 
 	go RunStrategy(walletClient, dataClient)
 
@@ -74,6 +82,8 @@ func main() {
 	signal.Notify(gracefulStop, syscall.SIGTERM, syscall.SIGINT)
 	<-gracefulStop
 
+	// Should we flatten the inventory at shutdown?
+
 	log.Print("Terminating due to user input.")
-	
+
 }
