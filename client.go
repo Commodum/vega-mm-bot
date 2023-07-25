@@ -167,7 +167,7 @@ func (d *DataClient) streamVegaData(wg *sync.WaitGroup) {
 	go d.v.streamMarketData(d.c, d.s)
 	go d.v.streamAccounts(d.c, d.s)
 	go d.v.streamOrders(d.c, d.s)
-	go d.v.streamPosition(d.c, d.s)
+	go d.v.streamPositions(d.c, d.s)
 
 	wg.Done()
 }
@@ -275,93 +275,114 @@ func (v *VegaClient) loadAssets(store *DataStore) {
 
 func (v *VegaClient) streamMarketData(config *Config, store *DataStore) {
 
-	stream, err := v.svc.ObserveMarketsData(context.Background(), &apipb.ObserveMarketsDataRequest{MarketIds: []string{config.VegaMarket}})
-	if err != nil {
-		log.Fatalf("Failed to start Market Data stream: %v", err)
-	}
+	for _, marketId := range v.vegaMarkets {
 
-	for {
-		res, err := stream.Recv()
+		stream, err := v.svc.ObserveMarketsData(context.Background(), &apipb.ObserveMarketsDataRequest{MarketIds: []string{marketId}})
 		if err != nil {
-			log.Fatalf("Could not recieve on market data stream: %v", err)
+			log.Fatalf("Failed to start Market Data stream: %v", err)
 		}
 
-		// fmt.Printf("Received market data on stream: %+v", res)
+		go func(marketId string, stream apipb.TradingDataService_ObserveMarketsDataClient) {
+			for {
+				res, err := stream.Recv()
+				if err != nil {
+					log.Fatalf("Could not recieve on market data stream: %v", err)
+				}
 
-		for _, md := range res.MarketData {
-			store.v.SetMarketData(md)
-		}
+				// fmt.Printf("Received market data on stream: %+v", res)
+
+				for _, md := range res.MarketData {
+					store.v[marketId].SetMarketData(md)
+				}
+			}
+		}(marketId, stream)
+
 	}
 }
 
 func (v *VegaClient) streamAccounts(config *Config, store *DataStore) {
 
-	stream, err := v.svc.ObserveAccounts(context.Background(), &apipb.ObserveAccountsRequest{PartyId: config.VegaMarket})
-	if err != nil {
-		log.Fatalf("Failed to start accounts stream: %v", err)
-	}
+	for _, marketId := range v.vegaMarkets {
 
-	for {
-		res, err := stream.Recv()
+		stream, err := v.svc.ObserveAccounts(context.Background(), &apipb.ObserveAccountsRequest{MarketId: marketId, PartyId: config.WalletPubkey})
 		if err != nil {
-			log.Fatalf("Could not recieve on accounts stream: %v", err)
+			log.Fatalf("Failed to start accounts stream: %v", err)
 		}
 
-		// fmt.Printf("Received accounts on stream: %+v", res)
+		go func(marketId string, stream apipb.TradingDataService_ObserveAccountsClient) {
+			for {
+				res, err := stream.Recv()
+				if err != nil {
+					log.Fatalf("Could not recieve on accounts stream: %v", err)
+				}
 
-		switch r := res.Response.(type) {
-		case *apipb.ObserveAccountsResponse_Snapshot:
-			store.v.SetAccounts(r.Snapshot.Accounts)
-		case *apipb.ObserveAccountsResponse_Updates:
-			store.v.SetAccounts(r.Updates.Accounts)
-		}
+				// fmt.Printf("Received accounts on stream: %+v", res)
+
+				switch r := res.Response.(type) {
+				case *apipb.ObserveAccountsResponse_Snapshot:
+					store.v[marketId].SetAccounts(r.Snapshot.Accounts)
+				case *apipb.ObserveAccountsResponse_Updates:
+					store.v[marketId].SetAccounts(r.Updates.Accounts)
+				}
+			}
+		}(marketId, stream)
 	}
 }
 
 func (v *VegaClient) streamOrders(config *Config, store *DataStore) {
 
-	stream, err := v.svc.ObserveOrders(context.Background(), &apipb.ObserveOrdersRequest{MarketIds: []string{config.VegaMarket}, PartyIds: []string{config.WalletPubkey}})
-	if err != nil {
-		log.Fatalf("Failed to start Orders stream: %v", err)
-	}
+	for _, marketId := range v.vegaMarkets {
 
-	for {
-		res, err := stream.Recv()
+		stream, err := v.svc.ObserveOrders(context.Background(), &apipb.ObserveOrdersRequest{MarketIds: []string{marketId}, PartyIds: []string{config.WalletPubkey}})
 		if err != nil {
-			log.Fatalf("Could not recieve on orders stream: %v", err)
+			log.Fatalf("Failed to start Orders stream: %v", err)
 		}
 
-		// fmt.Printf("Received orders on stream: %+v", res)
+		go func(marketId string, stream apipb.TradingDataService_ObserveOrdersClient) {
+			for {
+				res, err := stream.Recv()
+				if err != nil {
+					log.Fatalf("Could not recieve on orders stream: %v", err)
+				}
 
-		switch r := res.Response.(type) {
-		case *apipb.ObserveOrdersResponse_Snapshot:
-			store.v.SetOrders(r.Snapshot.Orders)
-		case *apipb.ObserveOrdersResponse_Updates:
-			store.v.SetOrders(r.Updates.Orders)
-		}
+				// fmt.Printf("Received orders on stream: %+v", res)
+
+				switch r := res.Response.(type) {
+				case *apipb.ObserveOrdersResponse_Snapshot:
+					store.v[marketId].SetOrders(r.Snapshot.Orders)
+				case *apipb.ObserveOrdersResponse_Updates:
+					store.v[marketId].SetOrders(r.Updates.Orders)
+				}
+			}
+		}(marketId, stream)
 	}
 }
 
-func (v *VegaClient) streamPosition(config *Config, store *DataStore) {
+func (v *VegaClient) streamPositions(config *Config, store *DataStore) {
 
-	stream, err := v.svc.ObservePositions(context.Background(), &apipb.ObservePositionsRequest{MarketId: &config.VegaMarket, PartyId: &config.WalletPubkey})
-	if err != nil {
-		log.Fatalf("Failed to start positions stream: %v", err)
-	}
+	for _, marketId := range v.vegaMarkets {
 
-	for {
-		res, err := stream.Recv()
+		stream, err := v.svc.ObservePositions(context.Background(), &apipb.ObservePositionsRequest{MarketId: &marketId, PartyId: &config.WalletPubkey})
 		if err != nil {
-			log.Fatalf("Could not recieve on positions stream: %v", err)
+			log.Fatalf("Failed to start positions stream: %v", err)
 		}
 
-		// fmt.Printf("Received position on stream: %+v", res)
+		go func(marketId string, stream apipb.TradingDataService_ObservePositionsClient) {
+			for {
+				res, err := stream.Recv()
+				if err != nil {
+					log.Fatalf("Could not recieve on positions stream: %v", err)
+				}
 
-		switch r := res.Response.(type) {
-		case *apipb.ObservePositionsResponse_Snapshot:
-			store.v.SetPosition(r.Snapshot.Positions[0])
-		case *apipb.ObservePositionsResponse_Updates:
-			store.v.SetPosition(r.Updates.Positions[0])
-		}
+				// fmt.Printf("Received position on stream: %+v", res)
+
+				switch r := res.Response.(type) {
+				case *apipb.ObservePositionsResponse_Snapshot:
+					store.v[marketId].SetPosition(r.Snapshot.Positions[0])
+				case *apipb.ObservePositionsResponse_Updates:
+					store.v[marketId].SetPosition(r.Updates.Positions[0])
+				}
+			}
+		}(marketId, stream)
 	}
 }

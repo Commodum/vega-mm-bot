@@ -18,8 +18,6 @@ const (
 	defaultBinanceWsAddr     = "wss://stream.binance.com:443/ws"
 	defaultWalletServiceAddr = "http://127.0.0.1:1789"
 	defaultWalletPubkey      = ""
-	defaultVegaMarket        = ""
-	defaultBinanceMarket     = ""
 	defaultVegaMarkets       = "5b05109662e7434fea498c4a1c91d3179b80e9b8950d6106cec60e1f342fc604,2c2ea995d7366e423be7604f63ce047aa7186eb030ecc7b77395eae2fcbffcc5,074c929bba8faeeeba352b2569fc5360a59e12cdcbf60f915b492c4ac228b566"
 	defaultBinanceMarkets    = "BTCUSDT,ETHUSDT,LINKUSDT"
 )
