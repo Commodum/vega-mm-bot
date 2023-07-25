@@ -25,7 +25,7 @@ type VegaClient struct {
 type BinanceClient struct {
 	wsAddr         string
 	binanceMarkets []string
-	conns          map[string]*websocket.Conn
+	conn           *websocket.Conn
 }
 
 type DataClient struct {
@@ -40,7 +40,6 @@ func newDataClient(config *Config, store *DataStore) *DataClient {
 		b: &BinanceClient{
 			wsAddr:         config.BinanceWsAddr,
 			binanceMarkets: strings.Split(config.BinanceMarkets, ","),
-			conns:          map[string]*websocket.Conn{},
 		},
 		v: &VegaClient{
 			grpcAddr:    config.VegaGrpcAddr,
@@ -53,42 +52,48 @@ func newDataClient(config *Config, store *DataStore) *DataClient {
 
 func (d *DataClient) streamBinanceData(wg *sync.WaitGroup) {
 
-	for _, market := range strings.Split(d.c.BinanceMarkets, ",") {
+	markets := strings.Split(d.c.BinanceMarkets, ",")
 
-		d.s.b[market] = newBinanceStore(market)
-
-		conn, _, err := websocket.DefaultDialer.Dial(d.b.wsAddr, nil)
-		if err != nil {
-			log.Fatal("Dial Error: ", err)
-		}
-		defer conn.Close()
-		d.b.conns[market] = conn
-
-		req := struct {
-			Id     uint     `json:"id"`
-			Method string   `json:"method"`
-			Params []string `json:"params"`
-		}{
-			Id:     1,
-			Method: "SUBSCRIBE",
-			Params: []string{fmt.Sprintf("%s@ticker", strings.ToLower(market))},
-		}
-
-		out, _ := json.Marshal(req)
-
-		if err = conn.WriteMessage(websocket.TextMessage, out); err != nil {
-			log.Fatalf("Could not write on Binnace Websocket: %v", err)
-		}
-
-		_, _, err = conn.ReadMessage()
-		if err != nil {
-			log.Fatalf("Could not read from Binance websocket: %v", err)
-		}
+	for _, mkt := range markets {
+		d.s.b[mkt] = newBinanceStore(mkt)
 	}
 
-	wg.Done()
+	conn, _, err := websocket.DefaultDialer.Dial(d.b.wsAddr, nil)
+	if err != nil {
+		log.Fatal("Dial Error: ", err)
+	}
+	d.b.conn = conn
+
+	req := struct {
+		Id     uint     `json:"id"`
+		Method string   `json:"method"`
+		Params []string `json:"params"`
+	}{
+		Id:     1,
+		Method: "SUBSCRIBE",
+		Params: []string{
+			fmt.Sprintf("%s@ticker", strings.ToLower(markets[0])),
+			fmt.Sprintf("%s@ticker", strings.ToLower(markets[1])),
+			fmt.Sprintf("%s@ticker", strings.ToLower(markets[2])),
+		},
+	}
+
+	out, _ := json.Marshal(req)
+
+	if err = conn.WriteMessage(websocket.TextMessage, out); err != nil {
+		log.Fatalf("Could not write on Binance Websocket: %v", err)
+	}
+
+	_, msg, err := conn.ReadMessage()
+	if err != nil {
+		log.Fatalf("Could not read from Binance websocket: %v", err)
+	}
+	log.Printf("Message received: %v", string(msg))
+
+	// wg.Done()
 
 	response := struct {
+		Ticker   string          `json:"s"`
 		Type     string          `json:"e"`
 		AskPrice decimal.Decimal `json:"a"`
 		BidPrice decimal.Decimal `json:"b"`
@@ -99,10 +104,9 @@ func (d *DataClient) streamBinanceData(wg *sync.WaitGroup) {
 		NotB      string `json:"B"`
 	}{}
 
-	for {
-
-		for market, conn := range d.b.conns {
-
+	go func(conn *websocket.Conn) {
+		defer conn.Close()
+		for {
 			_, msg, err := conn.ReadMessage()
 			if err != nil {
 				// fmt.Println(err)
@@ -116,6 +120,7 @@ func (d *DataClient) streamBinanceData(wg *sync.WaitGroup) {
 				// log.Printf("Reconnected to Binance WS")
 				log.Fatalf("Could not read message from websocket: %v", err)
 			}
+			// fmt.Printf("Message received: %v\n", string(msg))
 
 			err = json.Unmarshal(msg, &response)
 			if err != nil {
@@ -128,8 +133,23 @@ func (d *DataClient) streamBinanceData(wg *sync.WaitGroup) {
 			// Check content of response.
 
 			// Set value in store
-			d.s.b[market].Set(response.BidPrice.Copy(), response.AskPrice.Copy())
+			d.s.b[strings.Clone(response.Ticker)].Set(response.BidPrice.Copy(), response.AskPrice.Copy())
+		}
+	}(conn)
 
+	for {
+		doneCount := 0
+		for _, market := range markets {
+			bid, _ := d.s.b[market].Get()
+			if bid.IsZero() {
+				continue
+			} else {
+				doneCount++
+			}
+		}
+		if doneCount == len(markets) {
+			wg.Done()
+			break
 		}
 	}
 
@@ -209,18 +229,17 @@ func (v *VegaClient) loadMarketData(store *DataStore) {
 
 func (v *VegaClient) loadAccounts(config *Config, store *DataStore) {
 
+	res, err := v.svc.ListAccounts(context.Background(), &apipb.ListAccountsRequest{Filter: &apipb.AccountFilter{PartyIds: []string{config.WalletPubkey}}})
+	if err != nil {
+		log.Fatalf("Couldn't load accounts: %v", err)
+	}
+
+	accounts := []*apipb.AccountBalance{}
+	for _, a := range res.Accounts.Edges {
+		accounts = append(accounts, a.Node)
+	}
+
 	for _, marketId := range v.vegaMarkets {
-
-		res, err := v.svc.ListAccounts(context.Background(), &apipb.ListAccountsRequest{Filter: &apipb.AccountFilter{PartyIds: []string{config.WalletPubkey}, MarketIds: []string{marketId}}})
-		if err != nil {
-			log.Fatalf("Couldn't load accounts: %v", err)
-		}
-
-		accounts := []*apipb.AccountBalance{}
-		for _, a := range res.Accounts.Edges {
-			accounts = append(accounts, a.Node)
-		}
-
 		store.v[marketId].SetAccounts(accounts)
 	}
 }
@@ -310,30 +329,27 @@ func (v *VegaClient) streamMarketData(config *Config, store *DataStore) {
 
 func (v *VegaClient) streamAccounts(config *Config, store *DataStore) {
 
-	for _, marketId := range v.vegaMarkets {
+	stream, err := v.svc.ObserveAccounts(context.Background(), &apipb.ObserveAccountsRequest{PartyId: config.WalletPubkey})
+	if err != nil {
+		log.Fatalf("Failed to start accounts stream: %v", err)
+	}
 
-		stream, err := v.svc.ObserveAccounts(context.Background(), &apipb.ObserveAccountsRequest{MarketId: marketId, PartyId: config.WalletPubkey})
+	for {
+		res, err := stream.Recv()
 		if err != nil {
-			log.Fatalf("Failed to start accounts stream: %v", err)
+			log.Fatalf("Could not recieve on accounts stream: %v", err)
 		}
 
-		go func(marketId string, stream apipb.TradingDataService_ObserveAccountsClient) {
-			for {
-				res, err := stream.Recv()
-				if err != nil {
-					log.Fatalf("Could not recieve on accounts stream: %v", err)
-				}
+		// fmt.Printf("Received accounts on stream: %+v", res)
 
-				// fmt.Printf("Received accounts on stream: %+v", res)
-
-				switch r := res.Response.(type) {
-				case *apipb.ObserveAccountsResponse_Snapshot:
-					store.v[marketId].SetAccounts(r.Snapshot.Accounts)
-				case *apipb.ObserveAccountsResponse_Updates:
-					store.v[marketId].SetAccounts(r.Updates.Accounts)
-				}
+		for _, marketId := range v.vegaMarkets {
+			switch r := res.Response.(type) {
+			case *apipb.ObserveAccountsResponse_Snapshot:
+				store.v[marketId].SetAccounts(r.Snapshot.Accounts)
+			case *apipb.ObserveAccountsResponse_Updates:
+				store.v[marketId].SetAccounts(r.Updates.Accounts)
 			}
-		}(marketId, stream)
+		}
 	}
 }
 

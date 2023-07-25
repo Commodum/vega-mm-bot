@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
+	// "time"
 
 	wallet "github.com/jeremyletang/vega-go-sdk/wallet"
 )
@@ -61,6 +62,7 @@ func main() {
 
 	// a).
 	walletClient, err := wallet.NewClient(defaultWalletServiceAddr, config.WalletToken)
+	// _, err := wallet.NewClient(defaultWalletServiceAddr, config.WalletToken)
 	if err != nil {
 		log.Fatalf("Could not connect to wallet: %v", err)
 	}
@@ -75,6 +77,7 @@ func main() {
 	go dataClient.streamVegaData(&wg)
 
 	wg.Wait()
+	// time.Sleep(1 * time.Second)
 
 	go RunStrategy(walletClient, dataClient)
 
