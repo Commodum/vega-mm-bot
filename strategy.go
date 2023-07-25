@@ -58,6 +58,7 @@ func RunStrategy(walletClient *wallet.Client, dataClient *DataClient) {
 			bidVol := decimal.Max(balance.Mul(decimal.NewFromFloat(0.6)).Sub(decimal.Max(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
 			askVol := decimal.Max(balance.Mul(decimal.NewFromFloat(0.6)).Add(decimal.Min(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
 
+			log.Printf("Balance: %v", balance)
 			log.Printf("Binance best bid: %v, Binance best ask: %v", binanceBestBid, binanceBestAsk)
 			log.Printf("Open volume: %v, entry price: %v, notional exposure: %v", openVol, avgEntryPrice, notionalExposure)
 			log.Printf("Bid volume: %v, ask volume: %v", bidVol, askVol)
