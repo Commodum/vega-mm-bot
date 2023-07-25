@@ -154,6 +154,7 @@ func (d *DataClient) streamVegaData(wg *sync.WaitGroup) {
 	d.v.svc = apipb.NewTradingDataServiceClient(conn)
 
 	// Load initial data
+	d.v.loadMarketIds(d.s)
 	d.v.loadMarkets(d.s)
 	d.v.loadMarketData(d.s)
 	d.v.loadAccounts(d.c, d.s)
@@ -172,6 +173,12 @@ func (d *DataClient) streamVegaData(wg *sync.WaitGroup) {
 	wg.Done()
 }
 
+func (v *VegaClient) loadMarketIds(store *DataStore) {
+	for _, marketId := range v.vegaMarkets {
+		store.v[marketId] = newVegaStore(marketId)
+	}
+}
+
 func (v *VegaClient) loadMarkets(store *DataStore) {
 
 	for _, marketId := range v.vegaMarkets {
@@ -182,7 +189,6 @@ func (v *VegaClient) loadMarkets(store *DataStore) {
 		}
 
 		store.v[marketId].SetMarket(res.Market)
-
 	}
 }
 
