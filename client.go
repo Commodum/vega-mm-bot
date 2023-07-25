@@ -55,6 +55,8 @@ func (d *DataClient) streamBinanceData(wg *sync.WaitGroup) {
 
 	for _, market := range strings.Split(d.c.BinanceMarkets, ",") {
 
+		d.s.b[market] = newBinanceStore(market)
+
 		conn, _, err := websocket.DefaultDialer.Dial(d.b.wsAddr, nil)
 		if err != nil {
 			log.Fatal("Dial Error: ", err)
