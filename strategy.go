@@ -144,15 +144,15 @@ func getOrderSubmission(d decimals, vegaSpread, vegaRefPrice, binanceRefPrice, o
 	totalOrderSizeUnits := 0
 	if marketId == "2c2ea995d7366e423be7604f63ce047aa7186eb030ecc7b77395eae2fcbffcc5" {
 		numOrders = 3
-		totalOrderSizeUnits = int((math.Pow(float64(1.6), float64(numOrders+1)) - float64(1)) / float64(numOrders-1))
+		totalOrderSizeUnits = int((math.Pow(float64(1.7), float64(numOrders+1)) - float64(1)) / float64(numOrders-1))
 		// totalOrderSizeUnits = int(math.Pow(float64(1.5), float64(numOrders)))
 	} else if marketId == "074c929bba8faeeeba352b2569fc5360a59e12cdcbf60f915b492c4ac228b566" {
-		numOrders = 3
-		totalOrderSizeUnits = int((math.Pow(float64(1.9), float64(numOrders+1)) - float64(1)) / float64(numOrders-1))
+		numOrders = 4
+		totalOrderSizeUnits = int((math.Pow(float64(2), float64(numOrders+1)) - float64(1)) / float64(numOrders-1))
 		// totalOrderSizeUnits = int(math.Pow(float64(1.5), float64(numOrders)))
 	} else {
 		numOrders = 3
-		totalOrderSizeUnits = int((math.Pow(float64(1.8), float64(numOrders+1)) - float64(1)) / float64(numOrders-1))
+		totalOrderSizeUnits = int((math.Pow(float64(1.9), float64(numOrders+1)) - float64(1)) / float64(numOrders-1))
 	}
 	// numOrders := 3
 	// totalOrderSizeUnits := 2*int(math.Pow(float64(1.6), float64(numOrders))) - 2
@@ -160,21 +160,21 @@ func getOrderSubmission(d decimals, vegaSpread, vegaRefPrice, binanceRefPrice, o
 
 	sizeF := func(i int) decimal.Decimal {
 		return decimal.Max(
-			targetVolume.Div(decimal.NewFromInt(int64(totalOrderSizeUnits)).Mul(binanceRefPrice)).Mul(decimal.NewFromFloat(1.8).Pow(decimal.NewFromInt(int64(i)))),
+			targetVolume.Div(decimal.NewFromInt(int64(totalOrderSizeUnits)).Mul(binanceRefPrice)).Mul(decimal.NewFromFloat(1.9).Pow(decimal.NewFromInt(int64(i)))),
 			decimal.NewFromInt(1).Div(d.positionFactor),
 		)
 	}
 	if marketId == "2c2ea995d7366e423be7604f63ce047aa7186eb030ecc7b77395eae2fcbffcc5" {
 		sizeF = func(i int) decimal.Decimal {
 			return decimal.Max(
-				targetVolume.Div(decimal.NewFromInt(int64(totalOrderSizeUnits)).Mul(binanceRefPrice)).Mul(decimal.NewFromFloat(1.6).Pow(decimal.NewFromInt(int64(i)))),
+				targetVolume.Div(decimal.NewFromInt(int64(totalOrderSizeUnits)).Mul(binanceRefPrice)).Mul(decimal.NewFromFloat(1.7).Pow(decimal.NewFromInt(int64(i)))),
 				decimal.NewFromInt(1).Div(d.positionFactor),
 			)
 		}
 	} else if marketId == "074c929bba8faeeeba352b2569fc5360a59e12cdcbf60f915b492c4ac228b566" {
 		sizeF = func(i int) decimal.Decimal {
 			return decimal.Max(
-				targetVolume.Div(decimal.NewFromInt(int64(totalOrderSizeUnits)).Mul(binanceRefPrice)).Mul(decimal.NewFromFloat(1.9).Pow(decimal.NewFromInt(int64(i)))),
+				targetVolume.Div(decimal.NewFromInt(int64(totalOrderSizeUnits)).Mul(binanceRefPrice)).Mul(decimal.NewFromFloat(2).Pow(decimal.NewFromInt(int64(i)))),
 				decimal.NewFromInt(1).Div(d.positionFactor),
 			)
 		}
