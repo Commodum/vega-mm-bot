@@ -67,14 +67,14 @@ func RunStrategy(walletClient *wallet.Client, dataClient *DataClient) {
 				var bidVol decimal.Decimal
 				var askVol decimal.Decimal
 				if marketId == "2c2ea995d7366e423be7604f63ce047aa7186eb030ecc7b77395eae2fcbffcc5" {
-					bidVol = decimal.Max(balance.Mul(decimal.NewFromFloat(0.575)).Sub(decimal.Max(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
-					askVol = decimal.Max(balance.Mul(decimal.NewFromFloat(0.575)).Add(decimal.Min(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
+					bidVol = decimal.Max(balance.Mul(decimal.NewFromFloat(0.275)).Sub(decimal.Max(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
+					askVol = decimal.Max(balance.Mul(decimal.NewFromFloat(0.275)).Add(decimal.Min(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
 				} else if marketId == "074c929bba8faeeeba352b2569fc5360a59e12cdcbf60f915b492c4ac228b566" {
-					bidVol = decimal.Max(balance.Mul(decimal.NewFromFloat(0.175)).Sub(decimal.Max(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
-					askVol = decimal.Max(balance.Mul(decimal.NewFromFloat(0.175)).Add(decimal.Min(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
+					bidVol = decimal.Max(balance.Mul(decimal.NewFromFloat(0.125)).Sub(decimal.Max(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
+					askVol = decimal.Max(balance.Mul(decimal.NewFromFloat(0.125)).Add(decimal.Min(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
 				} else {
-					bidVol = decimal.Max(balance.Mul(decimal.NewFromFloat(0.575)).Sub(decimal.Max(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
-					askVol = decimal.Max(balance.Mul(decimal.NewFromFloat(0.575)).Add(decimal.Min(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
+					bidVol = decimal.Max(balance.Mul(decimal.NewFromFloat(0.275)).Sub(decimal.Max(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
+					askVol = decimal.Max(balance.Mul(decimal.NewFromFloat(0.275)).Add(decimal.Min(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
 				}
 				// bidVol := decimal.Max(balance.Mul(decimal.NewFromFloat(0.25)).Sub(decimal.Max(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
 				// askVol := decimal.Max(balance.Mul(decimal.NewFromFloat(0.25)).Add(decimal.Min(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
