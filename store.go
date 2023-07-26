@@ -5,42 +5,43 @@ import (
 	"sync"
 
 	// "github.com/gorilla/websocket"
-	"github.com/shopspring/decimal"
 	apipb "code.vegaprotocol.io/vega/protos/data-node/api/v2"
 	vegapb "code.vegaprotocol.io/vega/protos/vega"
+	"github.com/shopspring/decimal"
 	"golang.org/x/exp/maps"
 )
 
 type VegaStore struct {
 	mu sync.RWMutex
 
-	marketId string
-	assets map[string]*vegapb.Asset
-	market *vegapb.Market
+	marketId   string
+	assets     map[string]*vegapb.Asset
+	market     *vegapb.Market
 	marketData *vegapb.MarketData
-	accounts map[string]*apipb.AccountBalance
-	orders map[string]*vegapb.Order
-	position *vegapb.Position
+	accounts   map[string]*apipb.AccountBalance
+	orders     map[string]*vegapb.Order
+	position   *vegapb.Position
 }
 
 type BinanceStore struct {
 	mu sync.RWMutex
 
-	market string
+	market  string
 	bestBid decimal.Decimal
 	bestAsk decimal.Decimal
 }
 
 type DataStore struct {
-	v *VegaStore
-	b *BinanceStore
+	v map[string]*VegaStore
+	b map[string]*BinanceStore
 }
 
-func newVegaStore() *VegaStore {
+func newVegaStore(marketId string) *VegaStore {
 	return &VegaStore{
-		assets: map[string]*vegapb.Asset{},
+		marketId: marketId,
+		assets:   map[string]*vegapb.Asset{},
 		accounts: map[string]*apipb.AccountBalance{},
-		orders: map[string]*vegapb.Order{},
+		orders:   map[string]*vegapb.Order{},
 	}
 }
 
@@ -50,10 +51,10 @@ func newBinanceStore(mkt string) *BinanceStore {
 	}
 }
 
-func newDataStore(binanceMkt string) *DataStore {
+func newDataStore() *DataStore {
 	return &DataStore{
-		v: newVegaStore(),
-		b: newBinanceStore(binanceMkt),
+		v: map[string]*VegaStore{},
+		b: map[string]*BinanceStore{},
 	}
 }
 
@@ -61,12 +62,6 @@ func (v *VegaStore) SetMarketId(marketId string) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	v.marketId = marketId
-}
-
-func (v *VegaStore) GetMarketId() string {
-	v.mu.RLock()
-	defer v.mu.RUnlock()
-	return v.marketId
 }
 
 func (v *VegaStore) SetMarket(market *vegapb.Market) {
@@ -111,7 +106,7 @@ func (v *VegaStore) SetAccounts(accounts []*apipb.AccountBalance) {
 	defer v.mu.Unlock()
 
 	for _, acc := range accounts {
-		v.accounts[acc.Type.String() + acc.Asset + acc.MarketId] = acc
+		v.accounts[acc.Type.String()+acc.Asset+acc.MarketId] = acc
 	}
 }
 
@@ -130,7 +125,7 @@ func (v *VegaStore) SetOrders(orders []*vegapb.Order) {
 			delete(v.orders, ord.Id)
 			continue
 		}
-		
+
 		v.orders[ord.Id] = ord
 	}
 }
@@ -158,7 +153,6 @@ func (b *BinanceStore) Set(bid, ask decimal.Decimal) {
 	defer b.mu.Unlock()
 	b.bestBid, b.bestAsk = bid, ask
 }
-
 
 func (b *BinanceStore) Get() (bid, ask decimal.Decimal) {
 	b.mu.RLock()
