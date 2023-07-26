@@ -14,13 +14,14 @@ import (
 type VegaStore struct {
 	mu sync.RWMutex
 
-	marketId   string
-	assets     map[string]*vegapb.Asset
-	market     *vegapb.Market
-	marketData *vegapb.MarketData
-	accounts   map[string]*apipb.AccountBalance
-	orders     map[string]*vegapb.Order
-	position   *vegapb.Position
+	marketId           string
+	assets             map[string]*vegapb.Asset
+	market             *vegapb.Market
+	marketData         *vegapb.MarketData
+	accounts           map[string]*apipb.AccountBalance
+	orders             map[string]*vegapb.Order
+	position           *vegapb.Position
+	liquidityProvision *vegapb.LiquidityProvision
 }
 
 type BinanceStore struct {
@@ -146,6 +147,18 @@ func (v *VegaStore) GetPosition() *vegapb.Position {
 	v.mu.RLock()
 	defer v.mu.RUnlock()
 	return v.position
+}
+
+func (v *VegaStore) SetLiquidityProvision(liquidityProvision *vegapb.LiquidityProvision) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.liquidityProvision = liquidityProvision
+}
+
+func (v *VegaStore) GetLiquidityProvision() *vegapb.LiquidityProvision {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	return v.liquidityProvision
 }
 
 func (b *BinanceStore) Set(bid, ask decimal.Decimal) {

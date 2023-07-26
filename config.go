@@ -15,6 +15,8 @@ type Config struct {
 	WalletPubkey      string
 	VegaMarkets       string
 	BinanceMarkets    string
+	LpMarket          string
+	LpCommitmentSize  string
 }
 
 func parseFlags() *Config {
@@ -41,6 +43,12 @@ func parseFlags() *Config {
 	if binanceMarkets = getFlag(binanceMarkets, os.Getenv("VEGAMM_BINANCE_MARKETS")); len(binanceMarkets) <= 0 {
 		log.Fatal("Error: Missing -binance-markets flag")
 	}
+	if lpMarket = getFlag(lpMarket, os.Getenv("VEGAMM_LP_MARKET")); len(lpMarket) <= 0 {
+		log.Fatal("Error: Missing -lp-market flag")
+	}
+	if lpCommitmentSize = getFlag(lpCommitmentSize, os.Getenv("VEGAMM_LP_COMMITMENT_SIZE")); len(lpCommitmentSize) <= 0 {
+		log.Fatal("Error: Missing -lp-commitment-size flag")
+	}
 
 	return &Config{
 		VegaGrpcAddr:      vegaGrpcAddr,
@@ -50,6 +58,8 @@ func parseFlags() *Config {
 		WalletPubkey:      walletPubkey,
 		VegaMarkets:       vegaMarkets,
 		BinanceMarkets:    binanceMarkets,
+		LpMarket:          lpMarket,
+		LpCommitmentSize:  lpCommitmentSize,
 	}
 }
 
