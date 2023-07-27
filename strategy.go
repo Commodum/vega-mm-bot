@@ -22,7 +22,7 @@ type decimals struct {
 
 func RunStrategy(walletClient *wallet.Client, dataClient *DataClient) {
 
-	for range time.NewTicker(2000 * time.Millisecond).C {
+	for range time.NewTicker(1500 * time.Millisecond).C {
 		log.Printf("Executing strategy...")
 
 		var (
