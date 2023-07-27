@@ -34,9 +34,9 @@ func RunStrategy(walletClient *wallet.Client, dataClient *DataClient) {
 		)
 
 		for i, marketId := range marketIds {
-			// if marketId == "074c929bba8faeeeba352b2569fc5360a59e12cdcbf60f915b492c4ac228b566" {
-			// 	continue
-			// }
+			if marketId == "074c929bba8faeeeba352b2569fc5360a59e12cdcbf60f915b492c4ac228b566" {
+				continue
+			}
 			var (
 				bidOffset = decimal.NewFromInt(0)
 				askOffset = decimal.NewFromInt(0)
