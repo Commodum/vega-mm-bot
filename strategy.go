@@ -182,8 +182,8 @@ func SetLiquidityCommitment(walletClient *wallet.Client, dataClient *DataClient)
 
 func getLiquidityOrders(side vegapb.Side) []*vegapb.LiquidityOrder {
 
-	offset := 0.001
-	numOrders := 12
+	offset := 0.0012
+	numOrders := 10
 
 	sizeF := func(i int) decimal.Decimal {
 		return decimal.NewFromInt(2).Pow(decimal.NewFromInt(int64(i)))
@@ -227,7 +227,7 @@ func getOrderSubmission(d decimals, vegaSpread, vegaRefPrice, binanceRefPrice, o
 		totalOrderSizeUnits = int((math.Pow(float64(2), float64(numOrders+1)) - float64(1)) / float64(2-1))
 		// totalOrderSizeUnits = int(math.Pow(float64(1.5), float64(numOrders)))
 	} else {
-		numOrders = 4
+		numOrders = 3
 		totalOrderSizeUnits = int((math.Pow(float64(1.9), float64(numOrders+1)) - float64(1)) / float64(1.9-1))
 	}
 	// numOrders := 3
