@@ -183,6 +183,7 @@ func (d *DataClient) streamVegaData(wg *sync.WaitGroup) {
 	d.v.loadOrders(d.c, d.s)
 	d.v.loadPositions(d.c, d.s)
 	d.v.loadAssets(d.s)
+	d.v.loadLiquidityProvisions(d.c, d.s)
 
 	// spew.Dump(d.s.v)
 
@@ -297,6 +298,23 @@ func (v *VegaClient) loadAssets(store *DataStore) {
 		for _, a := range res.Assets.Edges {
 			store.v[marketId].SetAsset(a.Node)
 		}
+	}
+}
+
+func (v *VegaClient) loadLiquidityProvisions(config *Config, store *DataStore) {
+
+	for _, marketId := range v.vegaMarkets {
+
+		res, err := v.svc.ListLiquidityProvisions(context.Background(), &apipb.ListLiquidityProvisionsRequest{MarketId: &marketId, PartyId: &config.WalletPubkey})
+		if err != nil {
+			log.Fatalf("Couldn't load assets: %v", err)
+		}
+
+		for _, a := range res.LiquidityProvisions.Edges {
+			store.v[marketId].SetLiquidityProvision(a.Node)
+		}
+
+		log.Printf("Liquidity Provisions for market: %v: %v", marketId, res.LiquidityProvisions.Edges)
 	}
 }
 

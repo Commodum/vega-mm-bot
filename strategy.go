@@ -70,14 +70,14 @@ func RunStrategy(walletClient *wallet.Client, dataClient *DataClient) {
 				var bidVol decimal.Decimal
 				var askVol decimal.Decimal
 				if marketId == "2c2ea995d7366e423be7604f63ce047aa7186eb030ecc7b77395eae2fcbffcc5" {
-					bidVol = decimal.Max(balance.Mul(decimal.NewFromFloat(0.65)).Sub(decimal.Max(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
-					askVol = decimal.Max(balance.Mul(decimal.NewFromFloat(0.65)).Add(decimal.Min(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
+					bidVol = decimal.Max(balance.Mul(decimal.NewFromFloat(0.2)).Sub(decimal.Max(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
+					askVol = decimal.Max(balance.Mul(decimal.NewFromFloat(0.2)).Add(decimal.Min(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
 				} else if marketId == "074c929bba8faeeeba352b2569fc5360a59e12cdcbf60f915b492c4ac228b566" {
-					bidVol = decimal.Max(balance.Mul(decimal.NewFromFloat(0.125)).Sub(decimal.Max(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
-					askVol = decimal.Max(balance.Mul(decimal.NewFromFloat(0.125)).Add(decimal.Min(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
+					bidVol = decimal.Max(balance.Mul(decimal.NewFromFloat(0.075)).Sub(decimal.Max(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
+					askVol = decimal.Max(balance.Mul(decimal.NewFromFloat(0.075)).Add(decimal.Min(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
 				} else {
-					bidVol = decimal.Max(balance.Mul(decimal.NewFromFloat(0.65)).Sub(decimal.Max(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
-					askVol = decimal.Max(balance.Mul(decimal.NewFromFloat(0.65)).Add(decimal.Min(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
+					bidVol = decimal.Max(balance.Mul(decimal.NewFromFloat(0.15)).Sub(decimal.Max(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
+					askVol = decimal.Max(balance.Mul(decimal.NewFromFloat(0.15)).Add(decimal.Min(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
 				}
 				// bidVol := decimal.Max(balance.Mul(decimal.NewFromFloat(0.25)).Sub(decimal.Max(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
 				// askVol := decimal.Max(balance.Mul(decimal.NewFromFloat(0.25)).Add(decimal.Min(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
@@ -141,20 +141,93 @@ func RunStrategy(walletClient *wallet.Client, dataClient *DataClient) {
 	}
 }
 
+func SetLiquidityCommitment(walletClient *wallet.Client, dataClient *DataClient) {
+
+	if market := dataClient.s.v[dataClient.c.LpMarket].GetMarket(); market != nil {
+		asset := dataClient.s.v[dataClient.c.LpMarket].GetAsset(
+			market.GetTradableInstrument().
+				GetInstrument().
+				GetFuture().
+				GetSettlementAsset(),
+		)
+
+		// Determine LP commitment size
+		commitmentAmountUSD, _ := decimal.NewFromString(dataClient.c.LpCommitmentSize)
+		commitmentAmount := commitmentAmountUSD.Mul(decimal.NewFromInt(10).Pow(decimal.NewFromInt(int64(asset.Details.Decimals))))
+
+		// Create LP submission
+		lpSubmission := &commandspb.LiquidityProvisionSubmission{
+			MarketId:         dataClient.c.LpMarket,
+			CommitmentAmount: commitmentAmount.BigInt().String(),
+			Fee:              "0.0005",
+			Sells:            getLiquidityOrders(vegapb.Side_SIDE_SELL),
+			Buys:             getLiquidityOrders(vegapb.Side_SIDE_BUY),
+			Reference:        "Opportunities don't happen, you create them.",
+		}
+
+		// Submit transaction
+		err := walletClient.SendTransaction(
+			context.Background(), dataClient.c.WalletPubkey, &walletpb.SubmitTransactionRequest{
+				Command: &walletpb.SubmitTransactionRequest_LiquidityProvisionSubmission{
+					LiquidityProvisionSubmission: lpSubmission,
+				},
+			},
+		)
+
+		if err != nil {
+			log.Fatalf("Failed to send transaction: failed to submit liquidity commitment: %v", err)
+		}
+	}
+}
+
+func getLiquidityOrders(side vegapb.Side) []*vegapb.LiquidityOrder {
+
+	offset := 0.0012
+	numOrders := 10
+
+	sizeF := func(i int) decimal.Decimal {
+		return decimal.NewFromInt(2).Pow(decimal.NewFromInt(int64(i)))
+	}
+
+	offsetF := func(i int) decimal.Decimal {
+		return decimal.NewFromFloat(offset).Mul(decimal.NewFromInt(int64(i)))
+	}
+
+	referenceF := func(side vegapb.Side) vegapb.PeggedReference {
+		if side == vegapb.Side_SIDE_BUY {
+			return vegapb.PeggedReference_PEGGED_REFERENCE_BEST_BID
+		}
+		return vegapb.PeggedReference_PEGGED_REFERENCE_BEST_ASK
+	}
+
+	orders := []*vegapb.LiquidityOrder{}
+
+	for i := 1; i <= numOrders; i++ {
+		orders = append(orders, &vegapb.LiquidityOrder{
+			Reference:  referenceF(side),
+			Proportion: uint32(sizeF(i).BigInt().Uint64()),
+			Offset:     offsetF(i).BigInt().String(),
+		})
+	}
+
+	return orders
+
+}
+
 func getOrderSubmission(d decimals, vegaSpread, vegaRefPrice, binanceRefPrice, offset, targetVolume decimal.Decimal, side vegapb.Side, marketId string) []*commandspb.OrderSubmission {
 
 	numOrders := 0
 	totalOrderSizeUnits := float64(0)
 	if marketId == "2c2ea995d7366e423be7604f63ce047aa7186eb030ecc7b77395eae2fcbffcc5" {
-		numOrders = 2
-		totalOrderSizeUnits = (math.Pow(float64(1.75), float64(numOrders+1)) - float64(1)) / float64(1.75-1)
+		numOrders = 5
+		totalOrderSizeUnits = (math.Pow(float64(1.8), float64(numOrders+1)) - float64(1)) / float64(1.8-1)
 		// totalOrderSizeUnits = int(math.Pow(float64(1.5), float64(numOrders)))
 	} else if marketId == "074c929bba8faeeeba352b2569fc5360a59e12cdcbf60f915b492c4ac228b566" {
-		numOrders = 3
+		numOrders = 4
 		totalOrderSizeUnits = (math.Pow(float64(2), float64(numOrders+1)) - float64(1)) / float64(2-1)
 		// totalOrderSizeUnits = int(math.Pow(float64(1.5), float64(numOrders)))
 	} else {
-		numOrders = 2
+		numOrders = 3
 		totalOrderSizeUnits = (math.Pow(float64(1.9), float64(numOrders+1)) - float64(1)) / float64(1.9-1)
 	}
 	// numOrders := 3
@@ -170,7 +243,7 @@ func getOrderSubmission(d decimals, vegaSpread, vegaRefPrice, binanceRefPrice, o
 	if marketId == "2c2ea995d7366e423be7604f63ce047aa7186eb030ecc7b77395eae2fcbffcc5" {
 		sizeF = func(i int) decimal.Decimal {
 			return decimal.Max(
-				targetVolume.Div(decimal.NewFromFloat(totalOrderSizeUnits).Mul(vegaRefPrice.Div(d.priceFactor))).Mul(decimal.NewFromFloat(1.75).Pow(decimal.NewFromInt(int64(i)))),
+				targetVolume.Div(decimal.NewFromFloat(totalOrderSizeUnits).Mul(vegaRefPrice.Div(d.priceFactor))).Mul(decimal.NewFromFloat(1.8).Pow(decimal.NewFromInt(int64(i)))),
 				decimal.NewFromInt(1).Div(d.positionFactor),
 			)
 		}
