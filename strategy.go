@@ -152,7 +152,7 @@ func SetLiquidityCommitment(walletClient *wallet.Client, dataClient *DataClient)
 		)
 
 		// Determine LP commitment size
-		commitmentAmountUSD, _ := decimal.NewFromString(dataClient.c.LpCommitmentSize)
+		commitmentAmountUSD, _ := decimal.NewFromString(dataClient.c.LpCommitmentSizeUSD)
 		commitmentAmount := commitmentAmountUSD.Mul(decimal.NewFromInt(10).Pow(decimal.NewFromInt(int64(asset.Details.Decimals))))
 
 		// Create LP submission

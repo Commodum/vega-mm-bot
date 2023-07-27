@@ -8,15 +8,15 @@ import (
 )
 
 type Config struct {
-	VegaGrpcAddr      string
-	BinanceWsAddr     string
-	WalletServiceAddr string
-	WalletToken       string
-	WalletPubkey      string
-	VegaMarkets       string
-	BinanceMarkets    string
-	LpMarket          string
-	LpCommitmentSize  string
+	VegaGrpcAddr        string
+	BinanceWsAddr       string
+	WalletServiceAddr   string
+	WalletToken         string
+	WalletPubkey        string
+	VegaMarkets         string
+	BinanceMarkets      string
+	LpMarket            string
+	LpCommitmentSizeUSD string
 }
 
 func parseFlags() *Config {
@@ -46,20 +46,20 @@ func parseFlags() *Config {
 	if lpMarket = getFlag(lpMarket, os.Getenv("VEGAMM_LP_MARKET")); len(lpMarket) <= 0 {
 		log.Fatal("Error: Missing -lp-market flag")
 	}
-	if lpCommitmentSize = getFlag(lpCommitmentSize, os.Getenv("VEGAMM_LP_COMMITMENT_SIZE")); len(lpCommitmentSize) <= 0 {
+	if lpCommitmentSizeUSD = getFlag(lpCommitmentSizeUSD, os.Getenv("VEGAMM_LP_COMMITMENT_SIZE")); len(lpCommitmentSizeUSD) <= 0 {
 		log.Fatal("Error: Missing -lp-commitment-size flag")
 	}
 
 	return &Config{
-		VegaGrpcAddr:      vegaGrpcAddr,
-		BinanceWsAddr:     binanceWsAddr,
-		WalletServiceAddr: walletServiceAddr,
-		WalletToken:       walletToken,
-		WalletPubkey:      walletPubkey,
-		VegaMarkets:       vegaMarkets,
-		BinanceMarkets:    binanceMarkets,
-		LpMarket:          lpMarket,
-		LpCommitmentSize:  lpCommitmentSize,
+		VegaGrpcAddr:        vegaGrpcAddr,
+		BinanceWsAddr:       binanceWsAddr,
+		WalletServiceAddr:   walletServiceAddr,
+		WalletToken:         walletToken,
+		WalletPubkey:        walletPubkey,
+		VegaMarkets:         vegaMarkets,
+		BinanceMarkets:      binanceMarkets,
+		LpMarket:            lpMarket,
+		LpCommitmentSizeUSD: lpCommitmentSizeUSD,
 	}
 }
 
