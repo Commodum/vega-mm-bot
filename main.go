@@ -81,11 +81,11 @@ func main() {
 	go dataClient.streamBinanceData(&wg)
 	go dataClient.streamVegaData(&wg)
 
-	SetLiquidityCommitment(walletClient, dataClient)
-
 	wg.Wait()
 	// time.Sleep(1 * time.Second)
 
+	SetLiquidityCommitment(walletClient, dataClient)
+	
 	go RunStrategy(walletClient, dataClient)
 
 	gracefulStop := make(chan os.Signal, 1)

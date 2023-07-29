@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	// "math/rand"
 
 	vegapb "code.vegaprotocol.io/vega/protos/vega"
 	commandspb "code.vegaprotocol.io/vega/protos/vega/commands/v1"
@@ -101,14 +102,14 @@ func RunStrategy(walletClient *wallet.Client, dataClient *DataClient) {
 				var bidVol decimal.Decimal
 				var askVol decimal.Decimal
 				if marketId == "2c2ea995d7366e423be7604f63ce047aa7186eb030ecc7b77395eae2fcbffcc5" {
-					bidVol = decimal.Max(balance.Mul(decimal.NewFromFloat(0.2)).Sub(decimal.Max(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
-					askVol = decimal.Max(balance.Mul(decimal.NewFromFloat(0.2)).Add(decimal.Min(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
+					bidVol = decimal.Max(balance.Mul(decimal.NewFromFloat(0.75)).Sub(decimal.NewFromFloat(1.75).Mul(decimal.Max(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0)))), decimal.NewFromFloat(0))
+					askVol = decimal.Max(balance.Mul(decimal.NewFromFloat(0.75)).Add(decimal.NewFromFloat(1.75).Mul(decimal.Min(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0)))), decimal.NewFromFloat(0))
 				} else if marketId == "074c929bba8faeeeba352b2569fc5360a59e12cdcbf60f915b492c4ac228b566" {
-					bidVol = decimal.Max(balance.Mul(decimal.NewFromFloat(0.075)).Sub(decimal.Max(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
-					askVol = decimal.Max(balance.Mul(decimal.NewFromFloat(0.075)).Add(decimal.Min(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
+					bidVol = decimal.Max(balance.Mul(decimal.NewFromFloat(0.05)).Sub(decimal.Max(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
+					askVol = decimal.Max(balance.Mul(decimal.NewFromFloat(0.05)).Add(decimal.Min(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
 				} else {
-					bidVol = decimal.Max(balance.Mul(decimal.NewFromFloat(0.15)).Sub(decimal.Max(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
-					askVol = decimal.Max(balance.Mul(decimal.NewFromFloat(0.15)).Add(decimal.Min(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
+					bidVol = decimal.Max(balance.Mul(decimal.NewFromFloat(0.275)).Sub(decimal.NewFromFloat(1.75).Mul(decimal.Max(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0)))), decimal.NewFromFloat(0))
+					askVol = decimal.Max(balance.Mul(decimal.NewFromFloat(0.275)).Add(decimal.NewFromFloat(1.75).Mul(decimal.Min(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0)))), decimal.NewFromFloat(0))
 				}
 
 				log.Printf("Balance: %v", balance)
@@ -120,16 +121,32 @@ func RunStrategy(walletClient *wallet.Client, dataClient *DataClient) {
 				// If we are exposed long then asks have no offset while bids have an offset. Vice versa for short exposure.
 				// If exposure is below a threshold in either direction then there set both offsets to 0.
 
-				neutralityThreshold := 0.05
+				bidSizeBase := float64(1.8)
+				askSizeBase := float64(1.8)
+				neutralityThreshold := 0.02
 
 				switch true {
 				case signedExposure.LessThan(balance.Mul(decimal.NewFromFloat(neutralityThreshold)).Mul(decimal.NewFromInt(-1))):
 					// Push bid, step back ask
-					askOffset = decimal.NewFromFloat(0.0015)
+					askOffset = decimal.NewFromFloat(0.001)
+					bidSizeBase = 1.7
+					askSizeBase = 2
 					break
 				case signedExposure.GreaterThan(balance.Mul(decimal.NewFromFloat(neutralityThreshold))):
 					// Push ask, step back bid
-					bidOffset = decimal.NewFromFloat(0.0015)
+					bidOffset = decimal.NewFromFloat(0.001)
+					bidSizeBase = 2
+					askSizeBase = 1.7
+					break
+				case signedExposure.LessThan(balance.Mul(decimal.NewFromFloat(0.5*neutralityThreshold)).Mul(decimal.NewFromInt(-1))):
+					// Adjust orders shape
+					bidSizeBase = 1.75
+					askSizeBase = 2
+					break
+				case signedExposure.GreaterThan(balance.Mul(decimal.NewFromFloat(0.5*neutralityThreshold))):
+					// Adjust orders shape
+					bidSizeBase = 2
+					askSizeBase = 1.75
 					break
 				}
 
@@ -140,8 +157,8 @@ func RunStrategy(walletClient *wallet.Client, dataClient *DataClient) {
 				submissions = append(
 					submissions,
 					append(
-						getOrderSubmission(d, ourBestBid, vegaSpread, vegaBestBid, binanceBestBid, bidOffset, bidVol, vegapb.Side_SIDE_BUY, marketId),
-						getOrderSubmission(d, ourBestAsk, vegaSpread, vegaBestAsk, binanceBestAsk, askOffset, askVol, vegapb.Side_SIDE_SELL, marketId)...,
+						getOrderSubmission(d, bidSizeBase, ourBestBid, vegaSpread, vegaBestBid, binanceBestBid, bidOffset, bidVol, vegapb.Side_SIDE_BUY, marketId),
+						getOrderSubmission(d, askSizeBase, ourBestAsk, vegaSpread, vegaBestAsk, binanceBestAsk, askOffset, askVol, vegapb.Side_SIDE_SELL, marketId)...,
 					)...,
 				)
 			}
@@ -189,8 +206,8 @@ func SetLiquidityCommitment(walletClient *wallet.Client, dataClient *DataClient)
 			MarketId:         dataClient.c.LpMarket,
 			CommitmentAmount: commitmentAmount.BigInt().String(),
 			Fee:              "0.0005",
-			Sells:            getLiquidityOrders(vegapb.Side_SIDE_SELL),
-			Buys:             getLiquidityOrders(vegapb.Side_SIDE_BUY),
+			Sells:            getLiquidityOrders(vegapb.Side_SIDE_SELL, dataClient),
+			Buys:             getLiquidityOrders(vegapb.Side_SIDE_BUY, dataClient),
 			Reference:        "Opportunities don't happen, you create them.",
 		}
 
@@ -209,17 +226,22 @@ func SetLiquidityCommitment(walletClient *wallet.Client, dataClient *DataClient)
 	}
 }
 
-func getLiquidityOrders(side vegapb.Side) []*vegapb.LiquidityOrder {
+func getLiquidityOrders(side vegapb.Side, dataClient *DataClient) []*vegapb.LiquidityOrder {
 
-	offset := 0.0012
-	numOrders := 10
+	offset := 0.0015
+	numOrders := 5
 
 	sizeF := func(i int) decimal.Decimal {
 		return decimal.NewFromInt(2).Pow(decimal.NewFromInt(int64(i)))
 	}
 
+	vegaBestBid, _ := decimal.NewFromString(dataClient.s.v[dataClient.c.LpMarket].GetMarketData().GetBestBidPrice())
+
 	offsetF := func(i int) decimal.Decimal {
-		return decimal.NewFromFloat(offset).Mul(decimal.NewFromInt(int64(i)))
+		if i == 1 {
+			return decimal.NewFromFloat(0.00125).Mul(vegaBestBid)
+		}
+		return decimal.NewFromFloat(offset).Mul(decimal.NewFromInt(int64(i))).Mul(vegaBestBid)
 	}
 
 	referenceF := func(side vegapb.Side) vegapb.PeggedReference {
@@ -243,21 +265,21 @@ func getLiquidityOrders(side vegapb.Side) []*vegapb.LiquidityOrder {
 
 }
 
-func getOrderSubmission(d decimals, ourBestPrice int, vegaSpread, vegaRefPrice, binanceRefPrice, offset, targetVolume decimal.Decimal, side vegapb.Side, marketId string) []*commandspb.OrderSubmission {
+func getOrderSubmission(d decimals, orderSizeBase float64, ourBestPrice int, vegaSpread, vegaRefPrice, binanceRefPrice, offset, targetVolume decimal.Decimal, side vegapb.Side, marketId string) []*commandspb.OrderSubmission {
 
 	numOrders := 0
 	totalOrderSizeUnits := float64(0)
 	if marketId == "2c2ea995d7366e423be7604f63ce047aa7186eb030ecc7b77395eae2fcbffcc5" {
-		numOrders = 5
-		totalOrderSizeUnits = (math.Pow(float64(1.8), float64(numOrders+1)) - float64(1)) / float64(1.8-1)
-		// totalOrderSizeUnits = int(math.Pow(float64(1.5), float64(numOrders)))
+		numOrders = 6
+		totalOrderSizeUnits = (math.Pow(orderSizeBase, float64(numOrders+1)) - float64(1)) / (orderSizeBase - float64(1))
+		// totalOrderSizeUnits = (math.Pow(float64(1.8), float64(numOrders+1)) - float64(1)) / float64(1.8-1)
 	} else if marketId == "074c929bba8faeeeba352b2569fc5360a59e12cdcbf60f915b492c4ac228b566" {
-		numOrders = 4
+		numOrders = 5
 		totalOrderSizeUnits = (math.Pow(float64(2), float64(numOrders+1)) - float64(1)) / float64(2-1)
 		// totalOrderSizeUnits = int(math.Pow(float64(1.5), float64(numOrders)))
 	} else {
-		numOrders = 3
-		totalOrderSizeUnits = (math.Pow(float64(1.9), float64(numOrders+1)) - float64(1)) / float64(1.9-1)
+		numOrders = 4
+		totalOrderSizeUnits = (math.Pow(orderSizeBase, float64(numOrders+1)) - float64(1)) / (orderSizeBase - float64(1))
 	}
 	// numOrders := 3
 	// totalOrderSizeUnits := 2*int(math.Pow(float64(1.6), float64(numOrders))) - 2
@@ -265,14 +287,14 @@ func getOrderSubmission(d decimals, ourBestPrice int, vegaSpread, vegaRefPrice, 
 
 	sizeF := func(i int) decimal.Decimal {
 		return decimal.Max(
-			targetVolume.Div(decimal.NewFromFloat(totalOrderSizeUnits).Mul(vegaRefPrice.Div(d.priceFactor))).Mul(decimal.NewFromFloat(1.9).Pow(decimal.NewFromInt(int64(i)))),
+			targetVolume.Div(decimal.NewFromFloat(totalOrderSizeUnits).Mul(vegaRefPrice.Div(d.priceFactor))).Mul(decimal.NewFromFloat(orderSizeBase).Pow(decimal.NewFromInt(int64(i)))),
 			decimal.NewFromInt(1).Div(d.positionFactor),
 		)
 	}
 	if marketId == "2c2ea995d7366e423be7604f63ce047aa7186eb030ecc7b77395eae2fcbffcc5" {
 		sizeF = func(i int) decimal.Decimal {
 			return decimal.Max(
-				targetVolume.Div(decimal.NewFromFloat(totalOrderSizeUnits).Mul(vegaRefPrice.Div(d.priceFactor))).Mul(decimal.NewFromFloat(1.8).Pow(decimal.NewFromInt(int64(i)))),
+				targetVolume.Div(decimal.NewFromFloat(totalOrderSizeUnits).Mul(vegaRefPrice.Div(d.priceFactor))).Mul(decimal.NewFromFloat(orderSizeBase).Pow(decimal.NewFromInt(int64(i)))),
 				decimal.NewFromInt(1).Div(d.positionFactor),
 			)
 		}
@@ -290,6 +312,16 @@ func getOrderSubmission(d decimals, ourBestPrice int, vegaSpread, vegaRefPrice, 
 		if i == 1 && offset.IsZero() {
 			// First order, push it to the front of the book
 			log.Printf("Our best bid: %v", ourBestPrice)
+			
+			// if rand.Intn(3) == 1 {
+			// 	log.Printf("Pushing bid to front of book")
+			// 	if vegaSpread.GreaterThan(decimal.NewFromInt(1)) {
+			// 		return vegaRefPrice.Div(d.priceFactor).Add(decimal.NewFromInt(1).Div(d.priceFactor))
+			// 	}
+			// 	return vegaRefPrice.Div(d.priceFactor)
+			// }
+			// return vegaRefPrice.Div(d.priceFactor)
+
 			if vegaRefPrice.GreaterThan(decimal.NewFromInt(int64(ourBestPrice))) {
 				log.Printf("Pushing bid to front of book")
 				if vegaSpread.GreaterThan(decimal.NewFromInt(1)) {
@@ -298,10 +330,16 @@ func getOrderSubmission(d decimals, ourBestPrice int, vegaSpread, vegaRefPrice, 
 				return vegaRefPrice.Div(d.priceFactor)
 			}
 			return vegaRefPrice.Div(d.priceFactor)
+			// if rand.Intn(3) == 1 {
+			// 	if vegaSpread.GreaterThan(decimal.NewFromInt(1)) {
+			// 		return vegaRefPrice.Div(d.priceFactor).Add(decimal.NewFromInt(1).Div(d.priceFactor))
+			// 	}
+			// 	return vegaRefPrice.Div(d.priceFactor)
+			// }
 		}
 
 		return vegaRefPrice.Div(d.priceFactor).Mul(
-			decimal.NewFromInt(1).Sub(decimal.NewFromInt(int64(i)).Mul(decimal.NewFromFloat(0.0009))).Sub(offset),
+			decimal.NewFromInt(1).Sub(decimal.NewFromInt(int64(i)).Mul(decimal.NewFromFloat(0.00075))).Sub(offset),
 		)
 	}
 
@@ -311,6 +349,16 @@ func getOrderSubmission(d decimals, ourBestPrice int, vegaSpread, vegaRefPrice, 
 			if i == 1 && offset.IsZero() {
 				// First order, push it to the front of the book
 				log.Printf("Our best ask: %v", ourBestPrice)
+
+				// if rand.Intn(3) == 1 {
+				// 	log.Printf("Pushing ask to front of book")
+				// 	if vegaSpread.GreaterThan(decimal.NewFromInt(1)) {
+				// 		return vegaRefPrice.Div(d.priceFactor).Sub(decimal.NewFromInt(1).Div(d.priceFactor))
+				// 	}
+				// 	return vegaRefPrice.Div(d.priceFactor)
+				// }
+				// return vegaRefPrice.Div(d.priceFactor)
+
 				if vegaRefPrice.LessThan(decimal.NewFromInt(int64(ourBestPrice))) {
 					log.Printf("Pushing ask to front of book")
 					if vegaSpread.GreaterThan(decimal.NewFromInt(1)) {
@@ -319,10 +367,16 @@ func getOrderSubmission(d decimals, ourBestPrice int, vegaSpread, vegaRefPrice, 
 					return vegaRefPrice.Div(d.priceFactor)
 				}
 				return vegaRefPrice.Div(d.priceFactor)
+				// if rand.Intn(3) == 1 {
+				// 	if vegaSpread.GreaterThan(decimal.NewFromInt(1)) {
+				// 		return vegaRefPrice.Div(d.priceFactor).Sub(decimal.NewFromInt(1).Div(d.priceFactor))
+				// 	}
+				// 	return vegaRefPrice.Div(d.priceFactor)
+				// }
 			}
 
 			return vegaRefPrice.Div(d.priceFactor).Mul(
-				decimal.NewFromInt(1).Add(decimal.NewFromInt(int64(i)).Mul(decimal.NewFromFloat(0.0009))).Add(offset),
+				decimal.NewFromInt(1).Add(decimal.NewFromInt(int64(i)).Mul(decimal.NewFromFloat(0.00075))).Add(offset),
 			)
 		}
 	}
