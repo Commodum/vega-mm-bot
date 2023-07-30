@@ -84,7 +84,7 @@ func main() {
 	wg.Wait()
 	// time.Sleep(1 * time.Second)
 
-	SetLiquidityCommitment(walletClient, dataClient)
+	// SetLiquidityCommitment(walletClient, dataClient)
 	
 	go RunStrategy(walletClient, dataClient)
 
