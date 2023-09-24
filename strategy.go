@@ -378,3 +378,33 @@ func getPubkeyBalance(vega map[string]*VegaStore, pubkey, asset string, decimalP
 
 	return d.Div(decimal.NewFromFloat(10).Pow(decimal.NewFromInt(decimalPlaces)))
 }
+
+func getOrderSubmissionByProbabilityOfTrading(d decimals, ourBestPrice int, vegaSpread, vegaRefPrice, binanceRefPrice, offset, targetVolume decimal.Decimal, side vegapb.Side, marketId string) []*commandspb.OrderSubmission {
+
+	probability := getProbabilityOfTradingForOrder(mu, sigma, tau, lowerBound, upperBound, price, bestPrice, side)
+
+}
+
+func getProbabilityOfTradingForOrder(mu, sigma, tau, lowerBound, upperBound, price, bestPrice float64, side vegapb.Side) (probability float64) {
+
+	stddev := sigma * math.Sqrt(tau)
+
+	m := math.Log(bestPrice) + (mu-0.5*sigma*sigma)*tau
+
+	if price < lowerBound || price > upperBound {
+		return 0
+	}
+
+	min := cdf(m, stddev, lowerBound)
+	max := cdf(m, stddev, upperBound)
+	z := max - min
+
+	if side == vegapb.Side_SIDE_BUY {
+		return (cdf(m, stddev, price) - min) / z
+	}
+	return (max - cdf(m, stddev, price)) / z
+}
+
+func cdf(m, stddev, x float64) float64 {
+	return 0.5 * math.Erfc(-math.Log(x)-m/math.Sqrt(2.0)*stddev)
+}
