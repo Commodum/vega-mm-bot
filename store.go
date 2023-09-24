@@ -2,6 +2,7 @@ package main
 
 import (
 	// "fmt"
+	"log"
 	"sync"
 
 	// "github.com/gorilla/websocket"
@@ -72,6 +73,9 @@ func (v *VegaStore) SetMarket(market *vegapb.Market) {
 }
 
 func (v *VegaStore) GetMarket() *vegapb.Market {
+
+	log.Printf("%v", v)
+
 	v.mu.RLock()
 	defer v.mu.RUnlock()
 	return v.market

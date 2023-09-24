@@ -3,6 +3,7 @@ module vega-mm
 go 1.20
 
 require (
+	code.vegaprotocol.io/quant v0.2.5
 	code.vegaprotocol.io/vega v0.71.6
 	github.com/gorilla/websocket v1.5.0
 	github.com/jeremyletang/vega-go-sdk v0.0.0-20230123175705-c0e54d7c02f5
@@ -20,6 +21,7 @@ require (
 	golang.org/x/net v0.8.0 // indirect
 	golang.org/x/sys v0.7.0 // indirect
 	golang.org/x/text v0.8.0 // indirect
+	gonum.org/v1/gonum v0.12.0 // indirect
 	google.golang.org/genproto v0.0.0-20230110181048-76db0878b65f // indirect
 	google.golang.org/protobuf v1.30.0 // indirect
 )

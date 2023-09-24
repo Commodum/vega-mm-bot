@@ -4,11 +4,15 @@ import (
 	"context"
 	"log"
 	"math"
+
 	// "reflect"
 	"strconv"
 	"strings"
 	"time"
 
+	// "code.vegaprotocol.io/quant/interfaces"
+	pd "code.vegaprotocol.io/quant/pricedistribution"
+	"code.vegaprotocol.io/quant/riskmodelbs"
 	vegapb "code.vegaprotocol.io/vega/protos/vega"
 	commandspb "code.vegaprotocol.io/vega/protos/vega/commands/v1"
 	walletpb "code.vegaprotocol.io/vega/protos/vega/wallet/v1"
@@ -36,6 +40,10 @@ func RunStrategy(walletClient *wallet.Client, dataClient *DataClient) {
 		)
 
 		for i, marketId := range marketIds {
+
+			if marketId != dataClient.c.LpMarket {
+				continue
+			}
 
 			liveOrders := dataClient.s.v[marketId].GetOrders()
 			ourBestBid := 0
@@ -65,22 +73,17 @@ func RunStrategy(walletClient *wallet.Client, dataClient *DataClient) {
 
 			log.Printf("Our best bid: %v, Our best ask: %v", ourBestBid, ourBestAsk)
 
-			if marketId == "074c929bba8faeeeba352b2569fc5360a59e12cdcbf60f915b492c4ac228b566" {
-				continue
-			}
-			var (
-				bidOffset = decimal.NewFromInt(0)
-				askOffset = decimal.NewFromInt(0)
-			)
-
 			// Get market
 			if market := dataClient.s.v[marketId].GetMarket(); market != nil {
-				asset := dataClient.s.v[marketId].GetAsset(
-					market.GetTradableInstrument().
-						GetInstrument().
-						GetFuture().
-						GetSettlementAsset(),
-				)
+				settlementAsset := market.GetTradableInstrument().
+					GetInstrument().
+					GetFuture().
+					GetSettlementAsset()
+				asset := dataClient.s.v[marketId].GetAsset(settlementAsset)
+				logNormalRiskModel := market.GetTradableInstrument().
+					GetLogNormalRiskModel()
+				tau := logNormalRiskModel.GetTau()
+				riskParams := logNormalRiskModel.GetParams()
 
 				d := getDecimals(market, asset)
 
@@ -98,18 +101,8 @@ func RunStrategy(walletClient *wallet.Client, dataClient *DataClient) {
 				balance := getPubkeyBalance(dataClient.s.v, pubkey, asset.Id, int64(asset.Details.Decimals))
 
 				// Determine order sizing from position and balance.
-				var bidVol decimal.Decimal
-				var askVol decimal.Decimal
-				if marketId == "2c2ea995d7366e423be7604f63ce047aa7186eb030ecc7b77395eae2fcbffcc5" {
-					bidVol = decimal.Max(balance.Mul(decimal.NewFromFloat(0.2)).Sub(decimal.Max(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
-					askVol = decimal.Max(balance.Mul(decimal.NewFromFloat(0.2)).Add(decimal.Min(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
-				} else if marketId == "074c929bba8faeeeba352b2569fc5360a59e12cdcbf60f915b492c4ac228b566" {
-					bidVol = decimal.Max(balance.Mul(decimal.NewFromFloat(0.075)).Sub(decimal.Max(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
-					askVol = decimal.Max(balance.Mul(decimal.NewFromFloat(0.075)).Add(decimal.Min(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
-				} else {
-					bidVol = decimal.Max(balance.Mul(decimal.NewFromFloat(0.15)).Sub(decimal.Max(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
-					askVol = decimal.Max(balance.Mul(decimal.NewFromFloat(0.15)).Add(decimal.Min(openVol.Mul(avgEntryPrice), decimal.NewFromFloat(0))), decimal.NewFromFloat(0))
-				}
+				bidVol := balance.Mul(decimal.NewFromFloat(0.6))
+				askVol := balance.Mul(decimal.NewFromFloat(0.6))
 
 				log.Printf("Balance: %v", balance)
 				log.Printf("Binance best bid: %v, Binance best ask: %v", binanceBestBid, binanceBestAsk)
@@ -119,29 +112,34 @@ func RunStrategy(walletClient *wallet.Client, dataClient *DataClient) {
 				// Use the current position to determine the offset from the reference price for each order submission.
 				// If we are exposed long then asks have no offset while bids have an offset. Vice versa for short exposure.
 				// If exposure is below a threshold in either direction then there set both offsets to 0.
-
 				neutralityThreshold := 0.05
+				bidOffset := decimal.NewFromInt(0)
+				askOffset := decimal.NewFromInt(0)
 
 				switch true {
 				case signedExposure.LessThan(balance.Mul(decimal.NewFromFloat(neutralityThreshold)).Mul(decimal.NewFromInt(-1))):
-					// Push bid, step back ask
-					askOffset = decimal.NewFromFloat(0.0015)
+					// Step back ask
+					askOffset = decimal.NewFromFloat(0.0025)
 					break
 				case signedExposure.GreaterThan(balance.Mul(decimal.NewFromFloat(neutralityThreshold))):
-					// Push ask, step back bid
-					bidOffset = decimal.NewFromFloat(0.0015)
+					// Step back bid
+					bidOffset = decimal.NewFromFloat(0.0025)
 					break
 				}
 
 				log.Printf("bidOffset: %v, askOffset: %v", bidOffset, askOffset)
+
+				// We want to stay as neutral as possible even below the neutrality threshold, so we should place an
+				// order at the best bid or best ask with size equal to our exposure, this will close out our
+				// exposure as soon as possible.
 
 				cancellations = append(cancellations, &commandspb.OrderCancellation{MarketId: marketId})
 
 				submissions = append(
 					submissions,
 					append(
-						getOrderSubmission(d, ourBestBid, vegaSpread, vegaBestBid, binanceBestBid, bidOffset, bidVol, vegapb.Side_SIDE_BUY, marketId),
-						getOrderSubmission(d, ourBestAsk, vegaSpread, vegaBestAsk, binanceBestAsk, askOffset, askVol, vegapb.Side_SIDE_SELL, marketId)...,
+						getOrderSubmission(d, ourBestBid, vegaSpread, vegaBestBid, binanceBestBid, bidOffset, bidVol, vegapb.Side_SIDE_BUY, marketId, riskParams, tau),
+						getOrderSubmission(d, ourBestAsk, vegaSpread, vegaBestAsk, binanceBestAsk, askOffset, askVol, vegapb.Side_SIDE_SELL, marketId, riskParams, tau)...,
 					)...,
 				)
 			}
@@ -243,106 +241,106 @@ func getLiquidityOrders(side vegapb.Side) []*vegapb.LiquidityOrder {
 
 }
 
-func getOrderSubmission(d decimals, ourBestPrice int, vegaSpread, vegaRefPrice, binanceRefPrice, offset, targetVolume decimal.Decimal, side vegapb.Side, marketId string) []*commandspb.OrderSubmission {
+// func getOrderSubmission(d decimals, ourBestPrice int, vegaSpread, vegaRefPrice, binanceRefPrice, offset, targetVolume decimal.Decimal, side vegapb.Side, marketId string) []*commandspb.OrderSubmission {
 
-	numOrders := 0
-	totalOrderSizeUnits := float64(0)
-	if marketId == "2c2ea995d7366e423be7604f63ce047aa7186eb030ecc7b77395eae2fcbffcc5" {
-		numOrders = 5
-		totalOrderSizeUnits = (math.Pow(float64(1.8), float64(numOrders+1)) - float64(1)) / float64(1.8-1)
-		// totalOrderSizeUnits = int(math.Pow(float64(1.5), float64(numOrders)))
-	} else if marketId == "074c929bba8faeeeba352b2569fc5360a59e12cdcbf60f915b492c4ac228b566" {
-		numOrders = 4
-		totalOrderSizeUnits = (math.Pow(float64(2), float64(numOrders+1)) - float64(1)) / float64(2-1)
-		// totalOrderSizeUnits = int(math.Pow(float64(1.5), float64(numOrders)))
-	} else {
-		numOrders = 3
-		totalOrderSizeUnits = (math.Pow(float64(1.9), float64(numOrders+1)) - float64(1)) / float64(1.9-1)
-	}
-	// numOrders := 3
-	// totalOrderSizeUnits := 2*int(math.Pow(float64(1.6), float64(numOrders))) - 2
-	orders := []*commandspb.OrderSubmission{}
+// 	numOrders := 0
+// 	totalOrderSizeUnits := float64(0)
+// 	if marketId == "2c2ea995d7366e423be7604f63ce047aa7186eb030ecc7b77395eae2fcbffcc5" {
+// 		numOrders = 5
+// 		totalOrderSizeUnits = (math.Pow(float64(1.8), float64(numOrders+1)) - float64(1)) / float64(1.8-1)
+// 		// totalOrderSizeUnits = int(math.Pow(float64(1.5), float64(numOrders)))
+// 	} else if marketId == "074c929bba8faeeeba352b2569fc5360a59e12cdcbf60f915b492c4ac228b566" {
+// 		numOrders = 4
+// 		totalOrderSizeUnits = (math.Pow(float64(2), float64(numOrders+1)) - float64(1)) / float64(2-1)
+// 		// totalOrderSizeUnits = int(math.Pow(float64(1.5), float64(numOrders)))
+// 	} else {
+// 		numOrders = 3
+// 		totalOrderSizeUnits = (math.Pow(float64(1.9), float64(numOrders+1)) - float64(1)) / float64(1.9-1)
+// 	}
+// 	// numOrders := 3
+// 	// totalOrderSizeUnits := 2*int(math.Pow(float64(1.6), float64(numOrders))) - 2
+// 	orders := []*commandspb.OrderSubmission{}
 
-	sizeF := func(i int) decimal.Decimal {
-		return decimal.Max(
-			targetVolume.Div(decimal.NewFromFloat(totalOrderSizeUnits).Mul(vegaRefPrice.Div(d.priceFactor))).Mul(decimal.NewFromFloat(1.9).Pow(decimal.NewFromInt(int64(i)))),
-			decimal.NewFromInt(1).Div(d.positionFactor),
-		)
-	}
-	if marketId == "2c2ea995d7366e423be7604f63ce047aa7186eb030ecc7b77395eae2fcbffcc5" {
-		sizeF = func(i int) decimal.Decimal {
-			return decimal.Max(
-				targetVolume.Div(decimal.NewFromFloat(totalOrderSizeUnits).Mul(vegaRefPrice.Div(d.priceFactor))).Mul(decimal.NewFromFloat(1.8).Pow(decimal.NewFromInt(int64(i)))),
-				decimal.NewFromInt(1).Div(d.positionFactor),
-			)
-		}
-	} else if marketId == "074c929bba8faeeeba352b2569fc5360a59e12cdcbf60f915b492c4ac228b566" {
-		sizeF = func(i int) decimal.Decimal {
-			return decimal.Max(
-				targetVolume.Div(decimal.NewFromFloat(totalOrderSizeUnits).Mul(vegaRefPrice.Div(d.priceFactor))).Mul(decimal.NewFromFloat(2).Pow(decimal.NewFromInt(int64(i)))),
-				decimal.NewFromInt(1).Div(d.positionFactor),
-			)
-		}
-	}
+// 	sizeF := func(i int) decimal.Decimal {
+// 		return decimal.Max(
+// 			targetVolume.Div(decimal.NewFromFloat(totalOrderSizeUnits).Mul(vegaRefPrice.Div(d.priceFactor))).Mul(decimal.NewFromFloat(1.9).Pow(decimal.NewFromInt(int64(i)))),
+// 			decimal.NewFromInt(1).Div(d.positionFactor),
+// 		)
+// 	}
+// 	if marketId == "2c2ea995d7366e423be7604f63ce047aa7186eb030ecc7b77395eae2fcbffcc5" {
+// 		sizeF = func(i int) decimal.Decimal {
+// 			return decimal.Max(
+// 				targetVolume.Div(decimal.NewFromFloat(totalOrderSizeUnits).Mul(vegaRefPrice.Div(d.priceFactor))).Mul(decimal.NewFromFloat(1.8).Pow(decimal.NewFromInt(int64(i)))),
+// 				decimal.NewFromInt(1).Div(d.positionFactor),
+// 			)
+// 		}
+// 	} else if marketId == "074c929bba8faeeeba352b2569fc5360a59e12cdcbf60f915b492c4ac228b566" {
+// 		sizeF = func(i int) decimal.Decimal {
+// 			return decimal.Max(
+// 				targetVolume.Div(decimal.NewFromFloat(totalOrderSizeUnits).Mul(vegaRefPrice.Div(d.priceFactor))).Mul(decimal.NewFromFloat(2).Pow(decimal.NewFromInt(int64(i)))),
+// 				decimal.NewFromInt(1).Div(d.positionFactor),
+// 			)
+// 		}
+// 	}
 
-	priceF := func(i int) decimal.Decimal {
+// 	priceF := func(i int) decimal.Decimal {
 
-		if i == 1 && offset.IsZero() {
-			// First order, push it to the front of the book
-			log.Printf("Our best bid: %v", ourBestPrice)
-			if vegaRefPrice.GreaterThan(decimal.NewFromInt(int64(ourBestPrice))) {
-				log.Printf("Pushing bid to front of book")
-				if vegaSpread.GreaterThan(decimal.NewFromInt(1)) {
-					return vegaRefPrice.Div(d.priceFactor).Add(decimal.NewFromInt(1).Div(d.priceFactor))
-				}
-				return vegaRefPrice.Div(d.priceFactor)
-			}
-			return vegaRefPrice.Div(d.priceFactor)
-		}
+// 		if i == 1 && offset.IsZero() {
+// 			// First order, push it to the front of the book
+// 			log.Printf("Our best bid: %v", ourBestPrice)
+// 			if vegaRefPrice.GreaterThan(decimal.NewFromInt(int64(ourBestPrice))) {
+// 				log.Printf("Pushing bid to front of book")
+// 				if vegaSpread.GreaterThan(decimal.NewFromInt(1)) {
+// 					return vegaRefPrice.Div(d.priceFactor).Add(decimal.NewFromInt(1).Div(d.priceFactor))
+// 				}
+// 				return vegaRefPrice.Div(d.priceFactor)
+// 			}
+// 			return vegaRefPrice.Div(d.priceFactor)
+// 		}
 
-		return vegaRefPrice.Div(d.priceFactor).Mul(
-			decimal.NewFromInt(1).Sub(decimal.NewFromInt(int64(i)).Mul(decimal.NewFromFloat(0.0009))).Sub(offset),
-		)
-	}
+// 		return vegaRefPrice.Div(d.priceFactor).Mul(
+// 			decimal.NewFromInt(1).Sub(decimal.NewFromInt(int64(i)).Mul(decimal.NewFromFloat(0.0009))).Sub(offset),
+// 		)
+// 	}
 
-	if side == vegapb.Side_SIDE_SELL {
-		priceF = func(i int) decimal.Decimal {
+// 	if side == vegapb.Side_SIDE_SELL {
+// 		priceF = func(i int) decimal.Decimal {
 
-			if i == 1 && offset.IsZero() {
-				// First order, push it to the front of the book
-				log.Printf("Our best ask: %v", ourBestPrice)
-				if vegaRefPrice.LessThan(decimal.NewFromInt(int64(ourBestPrice))) {
-					log.Printf("Pushing ask to front of book")
-					if vegaSpread.GreaterThan(decimal.NewFromInt(1)) {
-						return vegaRefPrice.Div(d.priceFactor).Sub(decimal.NewFromInt(1).Div(d.priceFactor))
-					}
-					return vegaRefPrice.Div(d.priceFactor)
-				}
-				return vegaRefPrice.Div(d.priceFactor)
-			}
+// 			if i == 1 && offset.IsZero() {
+// 				// First order, push it to the front of the book
+// 				log.Printf("Our best ask: %v", ourBestPrice)
+// 				if vegaRefPrice.LessThan(decimal.NewFromInt(int64(ourBestPrice))) {
+// 					log.Printf("Pushing ask to front of book")
+// 					if vegaSpread.GreaterThan(decimal.NewFromInt(1)) {
+// 						return vegaRefPrice.Div(d.priceFactor).Sub(decimal.NewFromInt(1).Div(d.priceFactor))
+// 					}
+// 					return vegaRefPrice.Div(d.priceFactor)
+// 				}
+// 				return vegaRefPrice.Div(d.priceFactor)
+// 			}
 
-			return vegaRefPrice.Div(d.priceFactor).Mul(
-				decimal.NewFromInt(1).Add(decimal.NewFromInt(int64(i)).Mul(decimal.NewFromFloat(0.0009))).Add(offset),
-			)
-		}
-	}
+// 			return vegaRefPrice.Div(d.priceFactor).Mul(
+// 				decimal.NewFromInt(1).Add(decimal.NewFromInt(int64(i)).Mul(decimal.NewFromFloat(0.0009))).Add(offset),
+// 			)
+// 		}
+// 	}
 
-	for i := 1; i <= numOrders; i++ {
-		orders = append(orders, &commandspb.OrderSubmission{
-			MarketId:    marketId,
-			Price:       priceF(i).Mul(d.priceFactor).BigInt().String(),
-			Size:        sizeF(i).Mul(d.positionFactor).BigInt().Uint64(),
-			Side:        side,
-			TimeInForce: vegapb.Order_TIME_IN_FORCE_GTT,
-			ExpiresAt:   int64(time.Now().UnixNano() + 5*1e9),
-			Type:        vegapb.Order_TYPE_LIMIT,
-			PostOnly:    true,
-			Reference:   "ref",
-		})
-	}
+// 	for i := 1; i <= numOrders; i++ {
+// 		orders = append(orders, &commandspb.OrderSubmission{
+// 			MarketId:    marketId,
+// 			Price:       priceF(i).Mul(d.priceFactor).BigInt().String(),
+// 			Size:        sizeF(i).Mul(d.positionFactor).BigInt().Uint64(),
+// 			Side:        side,
+// 			TimeInForce: vegapb.Order_TIME_IN_FORCE_GTT,
+// 			ExpiresAt:   int64(time.Now().UnixNano() + 5*1e9),
+// 			Type:        vegapb.Order_TYPE_LIMIT,
+// 			PostOnly:    true,
+// 			Reference:   "ref",
+// 		})
+// 	}
 
-	return orders
-}
+// 	return orders
+// }
 
 func getDecimals(market *vegapb.Market, asset *vegapb.Asset) decimals {
 	return decimals{
@@ -379,17 +377,123 @@ func getPubkeyBalance(vega map[string]*VegaStore, pubkey, asset string, decimalP
 	return d.Div(decimal.NewFromFloat(10).Pow(decimal.NewFromInt(decimalPlaces)))
 }
 
-func getOrderSubmissionByProbabilityOfTrading(d decimals, ourBestPrice int, vegaSpread, vegaRefPrice, binanceRefPrice, offset, targetVolume decimal.Decimal, side vegapb.Side, marketId string) []*commandspb.OrderSubmission {
+func getOrderSubmission(d decimals, ourBestPrice int, vegaSpread, vegaRefPrice, binanceRefPrice, offset, targetVolume decimal.Decimal, side vegapb.Side, marketId string, riskParams *vegapb.LogNormalModelParams, tau float64) []*commandspb.OrderSubmission {
 
-	probability := getProbabilityOfTradingForOrder(mu, sigma, tau, lowerBound, upperBound, price, bestPrice, side)
+	firstOrderProbabilityOfTrading := decimal.NewFromFloat(0.8)
 
+	refPrice, _ := vegaRefPrice.Div(d.priceFactor).Float64()
+
+	firstPrice := findPriceByProbabilityOfTrading(firstOrderProbabilityOfTrading, side, refPrice, riskParams, tau)
+
+	log.Printf("Calculated price: %v, Side: %v \n", firstPrice, side)
+
+	orderSpacing := decimal.NewFromFloat(0.0015)
+
+	numOrders := 3
+	// totalOrderSizeUnits := (math.Pow(float64(2), float64(numOrders+1)) - float64(1)) / float64(2-1)
+	orders := []*commandspb.OrderSubmission{}
+
+	sizeF := func() decimal.Decimal {
+		return decimal.Max(targetVolume.Div(decimal.NewFromInt(int64(numOrders))).Mul(vegaRefPrice.Div(d.priceFactor)), decimal.NewFromInt(1).Mul(d.positionFactor))
+	}
+
+	priceF := func(i int) decimal.Decimal {
+
+		if i == 1 && offset.IsZero() {
+			log.Printf("Our best bid: %v", ourBestPrice)
+			return decimal.NewFromFloat(firstPrice)
+		}
+		return decimal.NewFromFloat(firstPrice).Mul(decimal.NewFromInt(1).Sub(decimal.NewFromInt(int64(i)).Mul(orderSpacing)).Sub(offset))
+
+	}
+
+	if side == vegapb.Side_SIDE_SELL {
+
+		priceF = func(i int) decimal.Decimal {
+			if i == 1 && offset.IsZero() {
+				log.Printf("Our best ask: %v", ourBestPrice)
+				return decimal.NewFromFloat(firstPrice)
+			}
+			return decimal.NewFromFloat(firstPrice).Mul(decimal.NewFromInt(1).Add(decimal.NewFromInt(int64(i)).Mul(orderSpacing)).Add(offset))
+		}
+
+	}
+
+	for i := 1; i <= numOrders; i++ {
+		orders = append(orders, &commandspb.OrderSubmission{
+			MarketId: marketId,
+			Price:    priceF(i).Mul(d.priceFactor).BigInt().String(),
+			// Size:        sizeF(i).Mul(d.positionFactor).BigInt().Uint64(),
+			Size:        sizeF().Mul(d.positionFactor).BigInt().Uint64(),
+			Side:        side,
+			TimeInForce: vegapb.Order_TIME_IN_FORCE_GTT,
+			ExpiresAt:   int64(time.Now().UnixNano() + 5*1e9),
+			Type:        vegapb.Order_TYPE_LIMIT,
+			PostOnly:    true,
+			Reference:   "ref",
+		})
+	}
+
+	return orders
 }
 
-func getProbabilityOfTradingForOrder(mu, sigma, tau, lowerBound, upperBound, price, bestPrice float64, side vegapb.Side) (probability float64) {
+func findPriceByProbabilityOfTrading(probability decimal.Decimal, side vegapb.Side, refPrice float64, riskParams *vegapb.LogNormalModelParams, tau float64) (price float64) {
+
+	log.Printf("prob: %v, refPrice: %v, tau: %v", probability, refPrice, tau)
+
+	// Iterate through prices until we find a price that corresponds to our desired probability.
+
+	// Get analytical distribution
+	modelParams := riskmodelbs.ModelParamsBS{
+		Mu:    riskParams.Mu,
+		R:     riskParams.R,
+		Sigma: riskParams.Sigma,
+	}
+
+	dist := modelParams.GetProbabilityDistribution(refPrice, tau)
+
+	// Get price range from distribution
+	minPrice, maxPrice := pd.PriceRange(dist, probability.InexactFloat64())
+
+	log.Printf("minPrice: %v, maxPrice: %v", minPrice, maxPrice)
+
+	price = refPrice
+	calculatedProb := float64(1)
+
+	for calculatedProb > probability.InexactFloat64() {
+		if side == vegapb.Side_SIDE_BUY {
+			price = price - float64(price*0.0001)
+		} else {
+			price = price + float64(price*0.0001)
+		}
+		calculatedProb = getProbabilityOfTradingForOrder(riskParams.Mu, riskParams.Sigma, tau, minPrice, maxPrice, price, refPrice, side)
+		log.Printf("Side: %v, Price: %v, Last calculated probability: %v, probability: %v", side, price, calculatedProb, probability)
+	}
+
+	log.Printf("Side: %v, Last calculated probability: %v", side, calculatedProb)
+
+	return price
+}
+
+func getProbabilityOfTradingForOrder(mu, sigma, tau, minPrice, maxPrice, price, bestPrice float64, side vegapb.Side) (probability float64) {
 
 	stddev := sigma * math.Sqrt(tau)
 
+	// log.Printf("stddev: %v", stddev)
+
 	m := math.Log(bestPrice) + (mu-0.5*sigma*sigma)*tau
+
+	// log.Printf("m: %v", m)
+
+	var upperBound float64
+	var lowerBound float64
+	if side == vegapb.Side_SIDE_BUY {
+		upperBound = bestPrice
+		lowerBound = minPrice
+	} else {
+		upperBound = maxPrice
+		lowerBound = bestPrice
+	}
 
 	if price < lowerBound || price > upperBound {
 		return 0
@@ -399,6 +503,10 @@ func getProbabilityOfTradingForOrder(mu, sigma, tau, lowerBound, upperBound, pri
 	max := cdf(m, stddev, upperBound)
 	z := max - min
 
+	// log.Printf("min: %v", min)
+	// log.Printf("max: %v", max)
+	// log.Printf("z: %v", z)
+
 	if side == vegapb.Side_SIDE_BUY {
 		return (cdf(m, stddev, price) - min) / z
 	}
@@ -406,5 +514,9 @@ func getProbabilityOfTradingForOrder(mu, sigma, tau, lowerBound, upperBound, pri
 }
 
 func cdf(m, stddev, x float64) float64 {
-	return 0.5 * math.Erfc(-math.Log(x)-m/math.Sqrt(2.0)*stddev)
+
+	// log.Printf("m: %v, stddev: %v, x: %v", m, stddev, x)
+	// log.Printf("result: %v", (0.5 * math.Erfc(-(math.Log(x)-m)/math.Sqrt(2.0)*stddev)))
+
+	return 0.5 * math.Erfc(-(math.Log(x)-m)/math.Sqrt(2.0)*stddev)
 }

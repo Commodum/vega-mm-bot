@@ -15,7 +15,7 @@ import (
 
 const (
 	defaultAdminPort           = 8080
-	defaultVegaGrpcAddr        = "datanode.vega.pathrocknetwork.org:3007" // "vega-mainnet-data-grpc.commodum.io:443" // "vega-data.nodes.guru:3007" "vega-data.bharvest.io:3007" "datanode.vega.pathrocknetwork.org:3007"
+	defaultVegaGrpcAddr        = "vega-data.nodes.guru:3007" // "datanode.vega.pathrocknetwork.org:3007" // "vega-mainnet-data-grpc.commodum.io:443" // "vega-data.nodes.guru:3007" "vega-data.bharvest.io:3007" "datanode.vega.pathrocknetwork.org:3007"
 	defaultBinanceWsAddr       = "wss://stream.binance.com:443/ws"
 	defaultWalletServiceAddr   = "http://127.0.0.1:1789"
 	defaultWalletPubkey        = ""
@@ -81,9 +81,10 @@ func main() {
 	go dataClient.streamBinanceData(&wg)
 	go dataClient.streamVegaData(&wg)
 
+	wg.Wait()
+
 	SetLiquidityCommitment(walletClient, dataClient)
 
-	wg.Wait()
 	// time.Sleep(1 * time.Second)
 
 	go RunStrategy(walletClient, dataClient)
