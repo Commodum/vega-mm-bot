@@ -394,7 +394,7 @@ func getOrderSubmission(d decimals, ourBestPrice int, vegaSpread, vegaRefPrice, 
 	orders := []*commandspb.OrderSubmission{}
 
 	sizeF := func() decimal.Decimal {
-		return decimal.Max(targetVolume.Div(decimal.NewFromInt(int64(numOrders))).Mul(vegaRefPrice.Div(d.priceFactor)), decimal.NewFromInt(1).Mul(d.positionFactor))
+		return decimal.Max(targetVolume.Div(decimal.NewFromInt(int64(numOrders)).Mul(vegaRefPrice.Div(d.priceFactor))), decimal.NewFromInt(1).Mul(d.positionFactor))
 	}
 
 	log.Printf("targetVol; %v, vegaRefPrice: %v", targetVolume, vegaRefPrice)
