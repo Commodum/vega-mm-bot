@@ -18,7 +18,7 @@ import (
 	walletpb "code.vegaprotocol.io/vega/protos/vega/wallet/v1"
 	"github.com/jeremyletang/vega-go-sdk/wallet"
 	"github.com/shopspring/decimal"
-	"golang.org/x/exp/maps"
+	// "golang.org/x/exp/maps"
 )
 
 type decimals struct {
@@ -98,7 +98,7 @@ func RunStrategy(walletClient *wallet.Client, dataClient *DataClient) {
 				openVol, avgEntryPrice := getEntryPriceAndVolume(d, market, dataClient.s.v[marketId].GetPosition())
 				notionalExposure := avgEntryPrice.Mul(openVol).Abs()
 				signedExposure := avgEntryPrice.Mul(openVol)
-				balance := getPubkeyBalance(dataClient.s.v, pubkey, asset.Id, int64(asset.Details.Decimals))
+				balance := getPubkeyBalance(marketId, dataClient.s.v, pubkey, asset.Id, int64(asset.Details.Decimals))
 
 				// Determine order sizing from position and balance.
 				bidVol := balance.Mul(decimal.NewFromFloat(0.6))
@@ -361,9 +361,9 @@ func getEntryPriceAndVolume(d decimals, market *vegapb.Market, position *vegapb.
 	return volume.Div(d.positionFactor), entryPrice.Div(d.priceFactor)
 }
 
-func getPubkeyBalance(vega map[string]*VegaStore, pubkey, asset string, decimalPlaces int64) (d decimal.Decimal) {
+func getPubkeyBalance(marketId string, vega map[string]*VegaStore, pubkey, asset string, decimalPlaces int64) (d decimal.Decimal) {
 
-	marketId := maps.Keys(vega)[0]
+	// marketId := maps.Keys(vega)[0]
 
 	for _, acc := range vega[marketId].GetAccounts() {
 		if acc.Owner != pubkey || acc.Asset != asset {
@@ -396,6 +396,8 @@ func getOrderSubmission(d decimals, ourBestPrice int, vegaSpread, vegaRefPrice, 
 	sizeF := func() decimal.Decimal {
 		return decimal.Max(targetVolume.Div(decimal.NewFromInt(int64(numOrders))).Mul(vegaRefPrice.Div(d.priceFactor)), decimal.NewFromInt(1).Mul(d.positionFactor))
 	}
+
+	log.Printf("targetVol; %v, vegaRefPrice: %v", targetVolume, vegaRefPrice)
 
 	priceF := func(i int) decimal.Decimal {
 
