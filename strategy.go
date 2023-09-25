@@ -412,7 +412,7 @@ func getPubkeyBalance(marketId string, vega map[string]*VegaStore, pubkey, asset
 
 func getOrderSubmission(d decimals, ourBestPrice int, vegaSpread, vegaRefPrice, binanceRefPrice, offset, targetVolume decimal.Decimal, side vegapb.Side, marketId string, riskParams *vegapb.LogNormalModelParams, tau float64) []*commandspb.OrderSubmission {
 
-	firstOrderProbabilityOfTrading := decimal.NewFromFloat(0.8)
+	firstOrderProbabilityOfTrading := decimal.NewFromFloat(0.85)
 
 	refPrice, _ := vegaRefPrice.Div(d.priceFactor).Float64()
 
@@ -420,9 +420,9 @@ func getOrderSubmission(d decimals, ourBestPrice int, vegaSpread, vegaRefPrice, 
 
 	log.Printf("Calculated price: %v, Side: %v \n", firstPrice, side)
 
-	orderSpacing := decimal.NewFromFloat(0.0015)
+	orderSpacing := decimal.NewFromFloat(0.00125)
 
-	numOrders := 3
+	numOrders := 4
 	// totalOrderSizeUnits := (math.Pow(float64(2), float64(numOrders+1)) - float64(1)) / float64(2-1)
 	orders := []*commandspb.OrderSubmission{}
 
