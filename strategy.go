@@ -132,6 +132,32 @@ func RunStrategy(walletClient *wallet.Client, dataClient *DataClient) {
 				// We want to stay as neutral as possible even below the neutrality threshold, so we should place an
 				// order at the best bid or best ask with size equal to our exposure, this will close out our
 				// exposure as soon as possible.
+				if !openVol.IsZero() {
+
+					var price decimal.Decimal
+					var side vegapb.Side
+					if signedExposure.IsPositive() {
+						side = vegapb.Side_SIDE_SELL
+						price = vegaBestAsk
+					} else {
+						side = vegapb.Side_SIDE_BUY
+						price = vegaBestBid
+					}
+
+					// Build and append neutrality order
+					submissions = append(submissions, &commandspb.OrderSubmission{
+						MarketId:    marketId,
+						Price:       price.BigInt().String(),
+						Size:        openVol.Div(price).Mul(d.priceFactor).Mul(d.positionFactor).BigInt().Uint64(),
+						Side:        side,
+						TimeInForce: vegapb.Order_TIME_IN_FORCE_GTT,
+						ExpiresAt:   int64(time.Now().UnixNano() + 5*1e9),
+						Type:        vegapb.Order_TYPE_LIMIT,
+						PostOnly:    true,
+						Reference:   "ref",
+					})
+
+				}
 
 				cancellations = append(cancellations, &commandspb.OrderCancellation{MarketId: marketId})
 
@@ -142,6 +168,8 @@ func RunStrategy(walletClient *wallet.Client, dataClient *DataClient) {
 						getOrderSubmission(d, ourBestAsk, vegaSpread, vegaBestAsk, binanceBestAsk, askOffset, askVol, vegapb.Side_SIDE_SELL, marketId, riskParams, tau)...,
 					)...,
 				)
+
+				log.Printf("%v", submissions)
 			}
 		}
 
@@ -394,7 +422,7 @@ func getOrderSubmission(d decimals, ourBestPrice int, vegaSpread, vegaRefPrice, 
 	orders := []*commandspb.OrderSubmission{}
 
 	sizeF := func() decimal.Decimal {
-		return decimal.Max(targetVolume.Div(decimal.NewFromInt(int64(numOrders)).Mul(vegaRefPrice.Div(d.priceFactor))), decimal.NewFromInt(1).Mul(d.positionFactor))
+		return decimal.Max(targetVolume.Div(decimal.NewFromInt(int64(numOrders)).Mul(vegaRefPrice.Div(d.priceFactor))), decimal.NewFromInt(1).Div(d.positionFactor))
 	}
 
 	log.Printf("targetVol; %v, vegaRefPrice: %v", targetVolume, vegaRefPrice)
