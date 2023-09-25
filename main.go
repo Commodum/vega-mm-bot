@@ -15,14 +15,14 @@ import (
 
 const (
 	defaultAdminPort           = 8080
-	defaultVegaGrpcAddr        = "vega-data.nodes.guru:3007" // "datanode.vega.pathrocknetwork.org:3007" // "vega-mainnet-data-grpc.commodum.io:443" // "vega-data.nodes.guru:3007" "vega-data.bharvest.io:3007" "datanode.vega.pathrocknetwork.org:3007"
+	defaultVegaGrpcAddr        = "vega-data.nodes.guru:3007" // "datanode.vega.pathrocknetwork.org:3007" // "vega-mainnet-data-grpc.commodum.io:443" // "vega-data.nodes.guru:3007" "vega-data.bharvest.io:3007"
 	defaultBinanceWsAddr       = "wss://stream.binance.com:443/ws"
 	defaultWalletServiceAddr   = "http://127.0.0.1:1789"
 	defaultWalletPubkey        = ""
 	defaultVegaMarkets         = "5b05109662e7434fea498c4a1c91d3179b80e9b8950d6106cec60e1f342fc604,2c2ea995d7366e423be7604f63ce047aa7186eb030ecc7b77395eae2fcbffcc5,074c929bba8faeeeba352b2569fc5360a59e12cdcbf60f915b492c4ac228b566"
 	defaultBinanceMarkets      = "BTCUSDT,ETHUSDT,LINKUSDT"
 	defaultLpMarket            = "2c2ea995d7366e423be7604f63ce047aa7186eb030ecc7b77395eae2fcbffcc5"
-	defaultLpCommitmentSizeUSD = "5000"
+	defaultLpCommitmentSizeUSD = "7500"
 )
 
 var (

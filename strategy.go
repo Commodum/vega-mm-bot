@@ -28,7 +28,7 @@ type decimals struct {
 
 func RunStrategy(walletClient *wallet.Client, dataClient *DataClient) {
 
-	for range time.NewTicker(2000 * time.Millisecond).C {
+	for range time.NewTicker(1500 * time.Millisecond).C {
 		log.Printf("Executing strategy...")
 
 		var (
@@ -101,8 +101,8 @@ func RunStrategy(walletClient *wallet.Client, dataClient *DataClient) {
 				balance := getPubkeyBalance(marketId, dataClient.s.v, pubkey, asset.Id, int64(asset.Details.Decimals))
 
 				// Determine order sizing from position and balance.
-				bidVol := balance.Mul(decimal.NewFromFloat(0.6))
-				askVol := balance.Mul(decimal.NewFromFloat(0.6))
+				bidVol := balance.Mul(decimal.NewFromFloat(0.55))
+				askVol := balance.Mul(decimal.NewFromFloat(0.55))
 
 				log.Printf("Balance: %v", balance)
 				log.Printf("Binance best bid: %v, Binance best ask: %v", binanceBestBid, binanceBestAsk)
@@ -112,18 +112,18 @@ func RunStrategy(walletClient *wallet.Client, dataClient *DataClient) {
 				// Use the current position to determine the offset from the reference price for each order submission.
 				// If we are exposed long then asks have no offset while bids have an offset. Vice versa for short exposure.
 				// If exposure is below a threshold in either direction then there set both offsets to 0.
-				neutralityThreshold := 0.05
+				neutralityThreshold := 0.02
 				bidOffset := decimal.NewFromInt(0)
 				askOffset := decimal.NewFromInt(0)
 
 				switch true {
 				case signedExposure.LessThan(balance.Mul(decimal.NewFromFloat(neutralityThreshold)).Mul(decimal.NewFromInt(-1))):
 					// Step back ask
-					askOffset = decimal.NewFromFloat(0.0025)
+					askOffset = decimal.NewFromFloat(0.002)
 					break
 				case signedExposure.GreaterThan(balance.Mul(decimal.NewFromFloat(neutralityThreshold))):
 					// Step back bid
-					bidOffset = decimal.NewFromFloat(0.0025)
+					bidOffset = decimal.NewFromFloat(0.002)
 					break
 				}
 
@@ -235,17 +235,22 @@ func SetLiquidityCommitment(walletClient *wallet.Client, dataClient *DataClient)
 	}
 }
 
-func getLiquidityOrders(side vegapb.Side) []*vegapb.LiquidityOrder {
+func getLiquidityOrders(side vegapb.Side, dataClient *DataClient) []*vegapb.LiquidityOrder {
 
-	offset := 0.0012
-	numOrders := 10
+	offset := 0.0015
+	numOrders := 6
 
 	sizeF := func(i int) decimal.Decimal {
 		return decimal.NewFromInt(2).Pow(decimal.NewFromInt(int64(i)))
 	}
 
+	vegaBestBid, _ := decimal.NewFromString(dataClient.s.v[dataClient.c.LpMarket].GetMarketData().GetBestBidPrice())
+
 	offsetF := func(i int) decimal.Decimal {
-		return decimal.NewFromFloat(offset).Mul(decimal.NewFromInt(int64(i)))
+		if i == 1 {
+	        return decimal.NewFromFloat(0.00125).Mul(vegaBestBid)
+		}
+		return decimal.NewFromFloat(offset).Mul(decimal.NewFromInt(int64(i))).Mul(vegaBestBid)
 	}
 
 	referenceF := func(side vegapb.Side) vegapb.PeggedReference {
