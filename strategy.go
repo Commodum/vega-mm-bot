@@ -215,8 +215,8 @@ func SetLiquidityCommitment(walletClient *wallet.Client, dataClient *DataClient)
 			MarketId:         dataClient.c.LpMarket,
 			CommitmentAmount: commitmentAmount.BigInt().String(),
 			Fee:              "0.0005",
-			Sells:            getLiquidityOrders(vegapb.Side_SIDE_SELL),
-			Buys:             getLiquidityOrders(vegapb.Side_SIDE_BUY),
+			Sells:            getLiquidityOrders(vegapb.Side_SIDE_SELL, dataClient),
+			Buys:             getLiquidityOrders(vegapb.Side_SIDE_BUY, dataClient),
 			Reference:        "Opportunities don't happen, you create them.",
 		}
 
@@ -497,9 +497,9 @@ func findPriceByProbabilityOfTrading(probability decimal.Decimal, side vegapb.Si
 
 	for calculatedProb > probability.InexactFloat64() {
 		if side == vegapb.Side_SIDE_BUY {
-			price = price - float64(price*0.0001)
+			price = price - float64(price*0.0005)
 		} else {
-			price = price + float64(price*0.0001)
+			price = price + float64(price*0.0005)
 		}
 		calculatedProb = getProbabilityOfTradingForOrder(riskParams.Mu, riskParams.Sigma, tau, minPrice, maxPrice, price, refPrice, side)
 		log.Printf("Side: %v, Price: %v, Last calculated probability: %v, probability: %v", side, price, calculatedProb, probability)
