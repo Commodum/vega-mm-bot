@@ -100,7 +100,13 @@ func RunStrategy(walletClient *wallet.Client, dataClient *DataClient) {
 				signedExposure := avgEntryPrice.Mul(openVol)
 				balance := getPubkeyBalance(marketId, dataClient.s.v, pubkey, asset.Id, int64(asset.Details.Decimals))
 
+				// Factors for reducing order sizing
+				bidReductionAmount := decimal.Max(signedExposure, decimal.NewFromInt(0))
+				askReductionAmount := decimal.Min(signedExposure, decimal.NewFromInt(0)).Abs()
+
 				// Determine order sizing from position and balance.
+				// bidVol := decimal.Max(balance.Mul(decimal.NewFromFloat(1.2)).Sub(decimal.NewFromFloat(1.5).Mul(decimal.Max(signedExposure, decimal.NewFromFloat(0)))), decimal.NewFromFloat(0))
+				// askVol := decimal.Max(balance.Mul(decimal.NewFromFloat(1.2)).Add(decimal.NewFromFloat(1.5).Mul(decimal.Min(signedExposure, decimal.NewFromFloat(0)))), decimal.NewFromFloat(0))
 				bidVol := balance.Mul(decimal.NewFromFloat(1.25))
 				askVol := balance.Mul(decimal.NewFromFloat(1.25))
 
@@ -112,20 +118,48 @@ func RunStrategy(walletClient *wallet.Client, dataClient *DataClient) {
 				// Use the current position to determine the offset from the reference price for each order submission.
 				// If we are exposed long then asks have no offset while bids have an offset. Vice versa for short exposure.
 				// If exposure is below a threshold in either direction then there set both offsets to 0.
-				neutralityThreshold := 0.02
+				// neutralityThreshold := 0.02
+				neutralityThresholds := []float64{0.02, 0.05, 0.1}
 				bidOffset := decimal.NewFromInt(0)
 				askOffset := decimal.NewFromInt(0)
 
 				switch true {
-				case signedExposure.LessThan(balance.Mul(decimal.NewFromFloat(neutralityThreshold)).Mul(decimal.NewFromInt(-1))):
+				case signedExposure.LessThan(balance.Mul(decimal.NewFromFloat(neutralityThresholds[0])).Mul(decimal.NewFromInt(-1))):
 					// Step back ask
-					askOffset = decimal.NewFromFloat(0.002)
+					askOffset = decimal.NewFromFloat(0.0025)
 					break
-				case signedExposure.GreaterThan(balance.Mul(decimal.NewFromFloat(neutralityThreshold))):
+				case signedExposure.GreaterThan(balance.Mul(decimal.NewFromFloat(neutralityThresholds[0]))):
 					// Step back bid
-					bidOffset = decimal.NewFromFloat(0.002)
+					bidOffset = decimal.NewFromFloat(0.0025)
 					break
 				}
+
+				// switch true {
+				// case signedExposure.LessThan(balance.Mul(decimal.NewFromFloat(neutralityThresholds[0])).Mul(decimal.NewFromInt(-1))):
+				// 	// Step back ask
+				// 	askOffset = decimal.NewFromFloat(0.0025)
+				// 	break
+				// case signedExposure.LessThan(balance.Mul(decimal.NewFromFloat(neutralityThresholds[1])).Mul(decimal.NewFromInt(-1))):
+				// 	// Step back ask
+				// 	askOffset = decimal.NewFromFloat(0.005)
+				// 	break
+				// case signedExposure.LessThan(balance.Mul(decimal.NewFromFloat(neutralityThresholds[2])).Mul(decimal.NewFromInt(-1))):
+				// 	// Step back ask
+				// 	askOffset = decimal.NewFromFloat(0.01)
+				// 	break
+				// case signedExposure.GreaterThan(balance.Mul(decimal.NewFromFloat(neutralityThresholds[0]))):
+				// 	// Step back bid
+				// 	bidOffset = decimal.NewFromFloat(0.0025)
+				// 	break
+				// case signedExposure.GreaterThan(balance.Mul(decimal.NewFromFloat(neutralityThresholds[1]))):
+				// 	// Step back bid
+				// 	bidOffset = decimal.NewFromFloat(0.005)
+				// 	break
+				// case signedExposure.GreaterThan(balance.Mul(decimal.NewFromFloat(neutralityThresholds[2]))):
+				// 	// Step back bid
+				// 	bidOffset = decimal.NewFromFloat(0.01)
+				// 	break
+				// }
 
 				log.Printf("bidOffset: %v, askOffset: %v", bidOffset, askOffset)
 
@@ -148,7 +182,7 @@ func RunStrategy(walletClient *wallet.Client, dataClient *DataClient) {
 					submissions = append(submissions, &commandspb.OrderSubmission{
 						MarketId:    marketId,
 						Price:       price.BigInt().String(),
-						Size:        openVol.Div(price).Mul(d.priceFactor).Mul(d.positionFactor).BigInt().Uint64(),
+						Size:        openVol.Mul(d.positionFactor).Abs().BigInt().Uint64(),
 						Side:        side,
 						TimeInForce: vegapb.Order_TIME_IN_FORCE_GTT,
 						ExpiresAt:   int64(time.Now().UnixNano() + 5*1e9),
@@ -164,12 +198,12 @@ func RunStrategy(walletClient *wallet.Client, dataClient *DataClient) {
 				submissions = append(
 					submissions,
 					append(
-						getOrderSubmission(d, ourBestBid, vegaSpread, vegaBestBid, binanceBestBid, bidOffset, bidVol, vegapb.Side_SIDE_BUY, marketId, riskParams, tau),
-						getOrderSubmission(d, ourBestAsk, vegaSpread, vegaBestAsk, binanceBestAsk, askOffset, askVol, vegapb.Side_SIDE_SELL, marketId, riskParams, tau)...,
+						getOrderSubmission(d, ourBestBid, vegaSpread, vegaBestBid, binanceBestBid, bidOffset, bidVol, bidReductionAmount, vegapb.Side_SIDE_BUY, marketId, riskParams, tau),
+						getOrderSubmission(d, ourBestAsk, vegaSpread, vegaBestAsk, binanceBestAsk, askOffset, askVol, askReductionAmount, vegapb.Side_SIDE_SELL, marketId, riskParams, tau)...,
 					)...,
 				)
 
-				log.Printf("%v", submissions)
+				// log.Printf("%v", submissions)
 			}
 		}
 
@@ -248,7 +282,7 @@ func getLiquidityOrders(side vegapb.Side, dataClient *DataClient) []*vegapb.Liqu
 
 	offsetF := func(i int) decimal.Decimal {
 		if i == 1 {
-	        return decimal.NewFromFloat(0.00125).Mul(vegaBestBid)
+			return decimal.NewFromFloat(0.00125).Mul(vegaBestBid)
 		}
 		return decimal.NewFromFloat(offset).Mul(decimal.NewFromInt(int64(i))).Mul(vegaBestBid)
 	}
@@ -410,7 +444,7 @@ func getPubkeyBalance(marketId string, vega map[string]*VegaStore, pubkey, asset
 	return d.Div(decimal.NewFromFloat(10).Pow(decimal.NewFromInt(decimalPlaces)))
 }
 
-func getOrderSubmission(d decimals, ourBestPrice int, vegaSpread, vegaRefPrice, binanceRefPrice, offset, targetVolume decimal.Decimal, side vegapb.Side, marketId string, riskParams *vegapb.LogNormalModelParams, tau float64) []*commandspb.OrderSubmission {
+func getOrderSubmission(d decimals, ourBestPrice int, vegaSpread, vegaRefPrice, binanceRefPrice, offset, targetVolume, orderReductionAmount decimal.Decimal, side vegapb.Side, marketId string, riskParams *vegapb.LogNormalModelParams, tau float64) []*commandspb.OrderSubmission {
 
 	firstOrderProbabilityOfTrading := decimal.NewFromFloat(0.85)
 
@@ -420,15 +454,40 @@ func getOrderSubmission(d decimals, ourBestPrice int, vegaSpread, vegaRefPrice, 
 
 	log.Printf("Calculated price: %v, Side: %v \n", firstPrice, side)
 
-	orderSpacing := decimal.NewFromFloat(0.0011)
+	reductionAmount := orderReductionAmount.Div(vegaRefPrice.Div(d.priceFactor))
 
-	numOrders := 6
+	orderSpacing := decimal.NewFromFloat(0.001)
+
+	orderSizeBase := 1.7
+
+	numOrders := 8
+	totalOrderSizeUnits := (math.Pow(orderSizeBase, float64(numOrders+1)) - float64(1)) / (orderSizeBase - float64(1))
 	// totalOrderSizeUnits := (math.Pow(float64(2), float64(numOrders+1)) - float64(1)) / float64(2-1)
 	orders := []*commandspb.OrderSubmission{}
 
-	sizeF := func() decimal.Decimal {
-		return decimal.Max(targetVolume.Div(decimal.NewFromInt(int64(numOrders)).Mul(vegaRefPrice.Div(d.priceFactor))), decimal.NewFromInt(1).Div(d.positionFactor))
+	sizeF := func(i int) decimal.Decimal {
+
+		size := targetVolume.Div(decimal.NewFromFloat(totalOrderSizeUnits).Mul(vegaRefPrice.Div(d.priceFactor))).Mul(decimal.NewFromFloat(orderSizeBase).Pow(decimal.NewFromInt(int64(i))))
+		adjustedSize := decimal.NewFromInt(0)
+
+		if size.LessThan(reductionAmount) {
+			reductionAmount = decimal.Max(reductionAmount.Sub(size), decimal.NewFromInt(0))
+		} else if size.GreaterThan(reductionAmount) {
+			adjustedSize = size.Sub(reductionAmount)
+			reductionAmount = decimal.NewFromInt(0)
+		} else {
+			reductionAmount = decimal.NewFromInt(0)
+		}
+
+		return decimal.Max(
+			adjustedSize,
+			decimal.NewFromInt(1).Div(d.positionFactor),
+		)
 	}
+
+	// sizeF := func() decimal.Decimal {
+	// 	return decimal.Max(targetVolume.Div(decimal.NewFromInt(int64(numOrders)).Mul(vegaRefPrice.Div(d.priceFactor))), decimal.NewFromInt(1).Div(d.positionFactor))
+	// }
 
 	log.Printf("targetVol; %v, vegaRefPrice: %v", targetVolume, vegaRefPrice)
 
@@ -456,10 +515,9 @@ func getOrderSubmission(d decimals, ourBestPrice int, vegaSpread, vegaRefPrice, 
 
 	for i := 1; i <= numOrders; i++ {
 		orders = append(orders, &commandspb.OrderSubmission{
-			MarketId: marketId,
-			Price:    priceF(i).Mul(d.priceFactor).BigInt().String(),
-			// Size:        sizeF(i).Mul(d.positionFactor).BigInt().Uint64(),
-			Size:        sizeF().Mul(d.positionFactor).BigInt().Uint64(),
+			MarketId:    marketId,
+			Price:       priceF(i).Mul(d.priceFactor).BigInt().String(),
+			Size:        sizeF(i).Mul(d.positionFactor).BigInt().Uint64(),
 			Side:        side,
 			TimeInForce: vegapb.Order_TIME_IN_FORCE_GTT,
 			ExpiresAt:   int64(time.Now().UnixNano() + 5*1e9),

@@ -15,8 +15,8 @@ import (
 
 const (
 	defaultAdminPort           = 8080
-	defaultVegaGrpcAddr        = "vega-data.nodes.guru:3007" // "datanode.vega.pathrocknetwork.org:3007" // "vega-mainnet-data-grpc.commodum.io:443" // "vega-data.nodes.guru:3007" "vega-data.bharvest.io:3007"
-	defaultVegaGrpcAddresses   = "vega-data.nodes.guru:3007,vega-data.bharvest.io:3007,datanode.vega.pathrocknetwork.org:3007,darling.network:3007,vega-grpc.mainnet.lovali.xyz:3007,grpcvega.gpvalidator.com:3007,vega-mainnet.anyvalid.com:3007"	// "tls://vega-mainnet-data-grpc.commodum.io:443,vega-data.nodes.guru:3007,vega-data.bharvest.io:3007,datanode.vega.pathrocknetwork.org:3007,tls://vega-grpc.aurora-edge.com:443,darling.network:3007,tls://grpc.velvet.tm.p2p.org:443,vega-grpc.mainnet.lovali.xyz:3007,grpcvega.gpvalidator.com:3007,vega-mainnet.anyvalid.com:3007"
+	defaultVegaGrpcAddr        = "vega-data.nodes.guru:3007"                                                                                                                                                                                       // "datanode.vega.pathrocknetwork.org:3007" // "vega-mainnet-data-grpc.commodum.io:443" // "vega-data.nodes.guru:3007" "vega-data.bharvest.io:3007"
+	defaultVegaGrpcAddresses   = "vega-data.nodes.guru:3007,vega-data.bharvest.io:3007,datanode.vega.pathrocknetwork.org:3007,darling.network:3007,vega-grpc.mainnet.lovali.xyz:3007,grpcvega.gpvalidator.com:3007,vega-mainnet.anyvalid.com:3007" // "tls://vega-mainnet-data-grpc.commodum.io:443,vega-data.nodes.guru:3007,vega-data.bharvest.io:3007,datanode.vega.pathrocknetwork.org:3007,tls://vega-grpc.aurora-edge.com:443,darling.network:3007,tls://grpc.velvet.tm.p2p.org:443,vega-grpc.mainnet.lovali.xyz:3007,grpcvega.gpvalidator.com:3007,vega-mainnet.anyvalid.com:3007"
 	defaultBinanceWsAddr       = "wss://stream.binance.com:443/ws"
 	defaultWalletServiceAddr   = "http://127.0.0.1:1789"
 	defaultWalletPubkey        = ""
@@ -29,7 +29,7 @@ const (
 var (
 	adminPort           uint
 	vegaGrpcAddr        string
-	vegaGrpcAddresses	string
+	vegaGrpcAddresses   string
 	binanceWsAddr       string
 	walletServiceAddr   string
 	walletToken         string
@@ -86,7 +86,7 @@ func main() {
 
 	wg.Wait()
 
-	SetLiquidityCommitment(walletClient, dataClient)
+	// SetLiquidityCommitment(walletClient, dataClient)
 
 	// time.Sleep(1 * time.Second)
 
