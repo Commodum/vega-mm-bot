@@ -9,6 +9,7 @@ import (
 
 type Config struct {
 	VegaGrpcAddr        string
+	VegaGrpcAddresses	string
 	BinanceWsAddr       string
 	WalletServiceAddr   string
 	WalletToken         string
@@ -24,6 +25,9 @@ func parseFlags() *Config {
 
 	if vegaGrpcAddr = getFlag(vegaGrpcAddr, os.Getenv("VEGAMM_VEGA_GRPC_ADDR")); len(vegaGrpcAddr) <= 0 {
 		vegaGrpcAddr = defaultVegaGrpcAddr
+	}
+	if vegaGrpcAddresses = getFlag(vegaGrpcAddresses, os.Getenv("VEGAMM_VEGA_GRPC_ADDRESSES")); len(vegaGrpcAddresses) <= 0 {
+		vegaGrpcAddresses = defaultVegaGrpcAddresses
 	}
 	if binanceWsAddr = getFlag(binanceWsAddr, os.Getenv("VEGAMM_BINANCE_WS_ADDR")); len(binanceWsAddr) <= 0 {
 		binanceWsAddr = defaultBinanceWsAddr
@@ -52,6 +56,7 @@ func parseFlags() *Config {
 
 	return &Config{
 		VegaGrpcAddr:        vegaGrpcAddr,
+		VegaGrpcAddresses:	 vegaGrpcAddresses,
 		BinanceWsAddr:       binanceWsAddr,
 		WalletServiceAddr:   walletServiceAddr,
 		WalletToken:         walletToken,

@@ -101,8 +101,8 @@ func RunStrategy(walletClient *wallet.Client, dataClient *DataClient) {
 				balance := getPubkeyBalance(marketId, dataClient.s.v, pubkey, asset.Id, int64(asset.Details.Decimals))
 
 				// Determine order sizing from position and balance.
-				bidVol := balance.Mul(decimal.NewFromFloat(0.55))
-				askVol := balance.Mul(decimal.NewFromFloat(0.55))
+				bidVol := balance.Mul(decimal.NewFromFloat(1.25))
+				askVol := balance.Mul(decimal.NewFromFloat(1.25))
 
 				log.Printf("Balance: %v", balance)
 				log.Printf("Binance best bid: %v, Binance best ask: %v", binanceBestBid, binanceBestAsk)
@@ -214,7 +214,7 @@ func SetLiquidityCommitment(walletClient *wallet.Client, dataClient *DataClient)
 		lpSubmission := &commandspb.LiquidityProvisionSubmission{
 			MarketId:         dataClient.c.LpMarket,
 			CommitmentAmount: commitmentAmount.BigInt().String(),
-			Fee:              "0.0005",
+			Fee:              "0.0001",
 			Sells:            getLiquidityOrders(vegapb.Side_SIDE_SELL, dataClient),
 			Buys:             getLiquidityOrders(vegapb.Side_SIDE_BUY, dataClient),
 			Reference:        "Opportunities don't happen, you create them.",
@@ -420,9 +420,9 @@ func getOrderSubmission(d decimals, ourBestPrice int, vegaSpread, vegaRefPrice, 
 
 	log.Printf("Calculated price: %v, Side: %v \n", firstPrice, side)
 
-	orderSpacing := decimal.NewFromFloat(0.00125)
+	orderSpacing := decimal.NewFromFloat(0.0011)
 
-	numOrders := 4
+	numOrders := 6
 	// totalOrderSizeUnits := (math.Pow(float64(2), float64(numOrders+1)) - float64(1)) / float64(2-1)
 	orders := []*commandspb.OrderSubmission{}
 

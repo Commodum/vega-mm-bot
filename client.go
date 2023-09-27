@@ -17,9 +17,12 @@ import (
 )
 
 type VegaClient struct {
+	grpcAddresses	[]string
 	grpcAddr    string
 	vegaMarkets []string
 	svc         apipb.TradingDataServiceClient
+	reconnChan	chan struct{}
+	reconnecting bool
 }
 
 type BinanceClient struct {
@@ -43,7 +46,10 @@ func newDataClient(config *Config, store *DataStore) *DataClient {
 		},
 		v: &VegaClient{
 			grpcAddr:    config.VegaGrpcAddr,
+			grpcAddresses: strings.Split(config.VegaGrpcAddresses, ","),
 			vegaMarkets: strings.Split(config.VegaMarkets, ","),
+			reconnChan: make(chan struct{}),
+			reconnecting: false,
 		},
 		c: config,
 		s: store,
@@ -166,11 +172,75 @@ func (d *DataClient) streamBinanceData(wg *sync.WaitGroup) {
 // 	position *vegapb.Position
 // }
 
+func (vegaClient *VegaClient) testGrpcAddresses() {
+
+	successes := []string{}
+	failures := []string{}
+
+	for _, addr := range vegaClient.grpcAddresses {
+
+		conn, err := grpc.Dial(addr, grpc.WithInsecure())
+		if err != nil {
+			log.Printf("Could not open connection to datanode (%v): %v", addr, err)
+			failures = append(failures, addr)
+			continue
+		}
+
+		grpcClient := apipb.NewTradingDataServiceClient(conn)
+
+		_, err = grpcClient.GetMarket(context.Background(), &apipb.GetMarketRequest{MarketId: vegaClient.vegaMarkets[0]})
+		if err != nil {
+			log.Printf("Could not get market from url: %v. Error: %v", addr, err)
+			failures = append(failures, addr)
+			conn.Close()
+			continue
+		}
+
+		successes = append(successes, addr)
+		conn.Close()
+
+	}
+
+	fmt.Printf("Successes: %v", successes)
+	fmt.Printf("Failures: %v", failures)
+
+	fmt.Printf("Setting vegaClient grpcAddress to %v", successes[0])
+	vegaClient.grpcAddr = successes[0]
+}
+
+func (dataClient *DataClient) runVegaClientReconnectHandler() {
+	
+	for {
+		select {
+		case <- dataClient.v.reconnChan:
+			wg := &sync.WaitGroup{}
+			wg.Add(1)
+			go dataClient.streamVegaData(wg)
+			wg.Wait()
+			dataClient.v.reconnecting = false
+		}
+	}
+
+}
+
+func (vegaClient *VegaClient) handleGrpcReconnect() {
+
+	if vegaClient.reconnecting { return }
+	vegaClient.reconnecting = true
+	vegaClient.reconnChan <- struct{}{}
+
+}
+
 func (d *DataClient) streamVegaData(wg *sync.WaitGroup) {
 
-	conn, err := grpc.Dial(d.c.VegaGrpcAddr, grpc.WithInsecure())
+	// Test all available addresses
+	d.v.testGrpcAddresses();
+
+	conn, err := grpc.Dial(d.v.grpcAddr, grpc.WithInsecure())
 	if err != nil {
-		log.Fatalf("Could not open connection to datanode: %v", err)
+		log.Printf("Could not open connection to datanode: %v\n", err)
+		d.v.handleGrpcReconnect()
+		return
 	}
 
 	d.v.svc = apipb.NewTradingDataServiceClient(conn)
@@ -208,7 +278,9 @@ func (v *VegaClient) loadMarkets(store *DataStore) {
 
 		res, err := v.svc.GetMarket(context.Background(), &apipb.GetMarketRequest{MarketId: marketId})
 		if err != nil {
-			log.Fatalf("Couldn't load Vega market: %v", err)
+			log.Printf("Couldn't load Vega market: %v\n", err)
+			v.handleGrpcReconnect()
+			return
 		}
 
 		store.v[marketId].SetMarket(res.Market)
@@ -221,7 +293,9 @@ func (v *VegaClient) loadMarketData(store *DataStore) {
 
 		res, err := v.svc.GetLatestMarketData(context.Background(), &apipb.GetLatestMarketDataRequest{MarketId: marketId})
 		if err != nil {
-			log.Fatalf("Couldn't load market data: %v", err)
+			log.Printf("Couldn't load market data: %v\n", err)
+			v.handleGrpcReconnect()
+			return
 		}
 
 		store.v[marketId].SetMarketData(res.MarketData)
@@ -232,7 +306,9 @@ func (v *VegaClient) loadAccounts(config *Config, store *DataStore) {
 
 	res, err := v.svc.ListAccounts(context.Background(), &apipb.ListAccountsRequest{Filter: &apipb.AccountFilter{PartyIds: []string{config.WalletPubkey}}})
 	if err != nil {
-		log.Fatalf("Couldn't load accounts: %v", err)
+		log.Printf("Couldn't load accounts: %v\n", err)
+		v.handleGrpcReconnect()
+		return
 	}
 
 	accounts := []*apipb.AccountBalance{}
@@ -253,7 +329,9 @@ func (v *VegaClient) loadOrders(config *Config, store *DataStore) {
 		liveOnly := true
 		res, err := v.svc.ListOrders(context.Background(), &apipb.ListOrdersRequest{Filter: &apipb.OrderFilter{PartyIds: []string{config.WalletPubkey}, MarketIds: []string{marketId}, LiveOnly: &liveOnly}})
 		if err != nil {
-			log.Fatalf("Couldn't load orders: %v", err)
+			log.Printf("Couldn't load orders: %v\n", err)
+			v.handleGrpcReconnect()
+			return
 		}
 
 		orders := []*vegapb.Order{}
@@ -272,7 +350,9 @@ func (v *VegaClient) loadPositions(config *Config, store *DataStore) {
 
 		res, err := v.svc.ListPositions(context.Background(), &apipb.ListPositionsRequest{PartyId: config.WalletPubkey, MarketId: marketId})
 		if err != nil {
-			log.Fatalf("Couldn't load positions: %v", err)
+			log.Printf("Couldn't load positions: %v\n", err)
+			v.handleGrpcReconnect()
+			return
 		}
 
 		if len(res.Positions.Edges) > 1 {
@@ -292,7 +372,9 @@ func (v *VegaClient) loadAssets(store *DataStore) {
 
 		res, err := v.svc.ListAssets(context.Background(), &apipb.ListAssetsRequest{})
 		if err != nil {
-			log.Fatalf("Couldn't load assets: %v", err)
+			log.Printf("Couldn't load assets: %v\n", err)
+			v.handleGrpcReconnect()
+			return
 		}
 
 		for _, a := range res.Assets.Edges {
@@ -307,7 +389,9 @@ func (v *VegaClient) loadLiquidityProvisions(config *Config, store *DataStore) {
 
 		res, err := v.svc.ListLiquidityProvisions(context.Background(), &apipb.ListLiquidityProvisionsRequest{MarketId: &marketId, PartyId: &config.WalletPubkey})
 		if err != nil {
-			log.Fatalf("Couldn't load assets: %v", err)
+			log.Printf("Couldn't load liquidity provisions: %v\n", err)
+			v.handleGrpcReconnect()
+			return
 		}
 
 		for _, a := range res.LiquidityProvisions.Edges {
@@ -324,14 +408,18 @@ func (v *VegaClient) streamMarketData(config *Config, store *DataStore) {
 
 		stream, err := v.svc.ObserveMarketsData(context.Background(), &apipb.ObserveMarketsDataRequest{MarketIds: []string{marketId}})
 		if err != nil {
-			log.Fatalf("Failed to start Market Data stream: %v", err)
+			log.Printf("Failed to start Market Data stream: %v\n", err)
+			v.handleGrpcReconnect()
+			return
 		}
 
 		go func(marketId string, stream apipb.TradingDataService_ObserveMarketsDataClient) {
 			for {
 				res, err := stream.Recv()
 				if err != nil {
-					log.Fatalf("Could not recieve on market data stream: %v", err)
+					log.Printf("Could not recieve on market data stream: %v\n", err)
+					v.handleGrpcReconnect()
+					return
 				}
 
 				// fmt.Printf("Received market data on stream: %+v", res)
@@ -349,13 +437,17 @@ func (v *VegaClient) streamAccounts(config *Config, store *DataStore) {
 
 	stream, err := v.svc.ObserveAccounts(context.Background(), &apipb.ObserveAccountsRequest{PartyId: config.WalletPubkey})
 	if err != nil {
-		log.Fatalf("Failed to start accounts stream: %v", err)
+		log.Printf("Failed to start accounts stream: %v\n", err)
+		v.handleGrpcReconnect()
+		return
 	}
 
 	for {
 		res, err := stream.Recv()
 		if err != nil {
-			log.Fatalf("Could not recieve on accounts stream: %v", err)
+			log.Printf("Could not recieve on accounts stream: %v\n", err)
+			v.handleGrpcReconnect()
+			return
 		}
 
 		// fmt.Printf("Received accounts on stream: %+v", res)
@@ -377,14 +469,18 @@ func (v *VegaClient) streamOrders(config *Config, store *DataStore) {
 
 		stream, err := v.svc.ObserveOrders(context.Background(), &apipb.ObserveOrdersRequest{MarketIds: []string{marketId}, PartyIds: []string{config.WalletPubkey}})
 		if err != nil {
-			log.Fatalf("Failed to start Orders stream: %v", err)
+			log.Printf("Failed to start Orders stream: %v\n", err)
+			v.handleGrpcReconnect()
+			return
 		}
 
 		go func(marketId string, stream apipb.TradingDataService_ObserveOrdersClient) {
 			for {
 				res, err := stream.Recv()
 				if err != nil {
-					log.Fatalf("Could not recieve on orders stream: %v", err)
+					log.Printf("Could not recieve on orders stream: %v\n", err)
+					v.handleGrpcReconnect()
+					return
 				}
 
 				// fmt.Printf("Received orders on stream: %+v", res)
@@ -406,14 +502,18 @@ func (v *VegaClient) streamPositions(config *Config, store *DataStore) {
 
 		stream, err := v.svc.ObservePositions(context.Background(), &apipb.ObservePositionsRequest{MarketId: &marketId, PartyId: &config.WalletPubkey})
 		if err != nil {
-			log.Fatalf("Failed to start positions stream: %v", err)
+			log.Printf("Failed to start positions stream: %v\n", err)
+			v.handleGrpcReconnect()
+			return
 		}
 
 		go func(marketId string, stream apipb.TradingDataService_ObservePositionsClient) {
 			for {
 				res, err := stream.Recv()
 				if err != nil {
-					log.Fatalf("Could not recieve on positions stream: %v", err)
+					log.Printf("Could not recieve on positions stream: %v\n", err)
+					v.handleGrpcReconnect()
+					return
 				}
 
 				// fmt.Printf("Received position on stream: %+v", res)
