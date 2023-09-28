@@ -26,7 +26,7 @@ type decimals struct {
 	priceFactor    decimal.Decimal
 }
 
-func RunStrategy(walletClient *wallet.Client, dataClient *DataClient) {
+func RunStrategy(walletClient *wallet.Client, dataClient *DataClient, apiCh chan *ApiState) {
 
 	for range time.NewTicker(1500 * time.Millisecond).C {
 		log.Printf("Executing strategy...")
@@ -107,8 +107,8 @@ func RunStrategy(walletClient *wallet.Client, dataClient *DataClient) {
 				// Determine order sizing from position and balance.
 				// bidVol := decimal.Max(balance.Mul(decimal.NewFromFloat(1.2)).Sub(decimal.NewFromFloat(1.5).Mul(decimal.Max(signedExposure, decimal.NewFromFloat(0)))), decimal.NewFromFloat(0))
 				// askVol := decimal.Max(balance.Mul(decimal.NewFromFloat(1.2)).Add(decimal.NewFromFloat(1.5).Mul(decimal.Min(signedExposure, decimal.NewFromFloat(0)))), decimal.NewFromFloat(0))
-				bidVol := balance.Mul(decimal.NewFromFloat(1.25))
-				askVol := balance.Mul(decimal.NewFromFloat(1.25))
+				bidVol := balance.Mul(decimal.NewFromFloat(0.8))
+				askVol := balance.Mul(decimal.NewFromFloat(0.8))
 
 				log.Printf("Balance: %v", balance)
 				log.Printf("Binance best bid: %v, Binance best ask: %v", binanceBestBid, binanceBestAsk)
@@ -204,6 +204,19 @@ func RunStrategy(walletClient *wallet.Client, dataClient *DataClient) {
 				)
 
 				// log.Printf("%v", submissions)
+				state := &ApiState{
+					MarketId:              marketId,
+					Position:              dataClient.s.v[marketId].GetPosition(),
+					SignedExposure:        signedExposure,
+					VegaBestBid:           vegaBestBid,
+					OurBestBid:            decimal.NewFromInt(int64(ourBestBid)),
+					VegaBestAsk:           vegaBestAsk,
+					OurBestAsk:            decimal.NewFromInt(int64(ourBestAsk)),
+					LiveOrdersCount:       len(dataClient.s.v[marketId].GetOrders()),
+					MarketDataUpdateCount: int(dataClient.s.v[marketId].marketDataUpdateCounter),
+				}
+
+				apiCh <- state
 			}
 		}
 
@@ -446,7 +459,7 @@ func getPubkeyBalance(marketId string, vega map[string]*VegaStore, pubkey, asset
 
 func getOrderSubmission(d decimals, ourBestPrice int, vegaSpread, vegaRefPrice, binanceRefPrice, offset, targetVolume, orderReductionAmount decimal.Decimal, side vegapb.Side, marketId string, riskParams *vegapb.LogNormalModelParams, tau float64) []*commandspb.OrderSubmission {
 
-	firstOrderProbabilityOfTrading := decimal.NewFromFloat(0.85)
+	firstOrderProbabilityOfTrading := decimal.NewFromFloat(0.75)
 
 	refPrice, _ := vegaRefPrice.Div(d.priceFactor).Float64()
 
@@ -458,9 +471,9 @@ func getOrderSubmission(d decimals, ourBestPrice int, vegaSpread, vegaRefPrice, 
 
 	orderSpacing := decimal.NewFromFloat(0.001)
 
-	orderSizeBase := 1.7
+	orderSizeBase := 1.65
 
-	numOrders := 8
+	numOrders := 6
 	totalOrderSizeUnits := (math.Pow(orderSizeBase, float64(numOrders+1)) - float64(1)) / (orderSizeBase - float64(1))
 	// totalOrderSizeUnits := (math.Pow(float64(2), float64(numOrders+1)) - float64(1)) / float64(2-1)
 	orders := []*commandspb.OrderSubmission{}

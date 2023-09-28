@@ -17,12 +17,12 @@ import (
 )
 
 type VegaClient struct {
-	grpcAddresses	[]string
-	grpcAddr    string
-	vegaMarkets []string
-	svc         apipb.TradingDataServiceClient
-	reconnChan	chan struct{}
-	reconnecting bool
+	grpcAddresses []string
+	grpcAddr      string
+	vegaMarkets   []string
+	svc           apipb.TradingDataServiceClient
+	reconnChan    chan struct{}
+	reconnecting  bool
 }
 
 type BinanceClient struct {
@@ -45,11 +45,11 @@ func newDataClient(config *Config, store *DataStore) *DataClient {
 			binanceMarkets: strings.Split(config.BinanceMarkets, ","),
 		},
 		v: &VegaClient{
-			grpcAddr:    config.VegaGrpcAddr,
+			grpcAddr:      config.VegaGrpcAddr,
 			grpcAddresses: strings.Split(config.VegaGrpcAddresses, ","),
-			vegaMarkets: strings.Split(config.VegaMarkets, ","),
-			reconnChan: make(chan struct{}),
-			reconnecting: false,
+			vegaMarkets:   strings.Split(config.VegaMarkets, ","),
+			reconnChan:    make(chan struct{}),
+			reconnecting:  false,
 		},
 		c: config,
 		s: store,
@@ -209,14 +209,17 @@ func (vegaClient *VegaClient) testGrpcAddresses() {
 }
 
 func (dataClient *DataClient) runVegaClientReconnectHandler() {
-	
+
 	for {
 		select {
-		case <- dataClient.v.reconnChan:
+		case <-dataClient.v.reconnChan:
+			log.Println("Recieved event on reconn channel")
 			wg := &sync.WaitGroup{}
 			wg.Add(1)
 			go dataClient.streamVegaData(wg)
+			log.Println("Waiting for new vega data streams")
 			wg.Wait()
+			log.Println("Finished waiting for new vega data streams")
 			dataClient.v.reconnecting = false
 		}
 	}
@@ -225,7 +228,12 @@ func (dataClient *DataClient) runVegaClientReconnectHandler() {
 
 func (vegaClient *VegaClient) handleGrpcReconnect() {
 
-	if vegaClient.reconnecting { return }
+	log.Println("Attempting reconnect.")
+
+	if vegaClient.reconnecting {
+		log.Println("Already reconnecting...")
+		return
+	}
 	vegaClient.reconnecting = true
 	vegaClient.reconnChan <- struct{}{}
 
@@ -234,7 +242,7 @@ func (vegaClient *VegaClient) handleGrpcReconnect() {
 func (d *DataClient) streamVegaData(wg *sync.WaitGroup) {
 
 	// Test all available addresses
-	d.v.testGrpcAddresses();
+	d.v.testGrpcAddresses()
 
 	conn, err := grpc.Dial(d.v.grpcAddr, grpc.WithInsecure())
 	if err != nil {
@@ -398,7 +406,7 @@ func (v *VegaClient) loadLiquidityProvisions(config *Config, store *DataStore) {
 			store.v[marketId].SetLiquidityProvision(a.Node)
 		}
 
-		log.Printf("Liquidity Provisions for market: %v: %v", marketId, res.LiquidityProvisions.Edges)
+		// log.Printf("Liquidity Provisions for market: %v: %v", marketId, res.LiquidityProvisions.Edges)
 	}
 }
 

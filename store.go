@@ -2,7 +2,7 @@ package main
 
 import (
 	// "fmt"
-	"log"
+	// "log"
 	"sync"
 
 	// "github.com/gorilla/websocket"
@@ -23,6 +23,8 @@ type VegaStore struct {
 	orders             map[string]*vegapb.Order
 	position           *vegapb.Position
 	liquidityProvision *vegapb.LiquidityProvision
+
+	marketDataUpdateCounter int64
 }
 
 type BinanceStore struct {
@@ -40,10 +42,11 @@ type DataStore struct {
 
 func newVegaStore(marketId string) *VegaStore {
 	return &VegaStore{
-		marketId: marketId,
-		assets:   map[string]*vegapb.Asset{},
-		accounts: map[string]*apipb.AccountBalance{},
-		orders:   map[string]*vegapb.Order{},
+		marketId:                marketId,
+		assets:                  map[string]*vegapb.Asset{},
+		accounts:                map[string]*apipb.AccountBalance{},
+		orders:                  map[string]*vegapb.Order{},
+		marketDataUpdateCounter: 0,
 	}
 }
 
@@ -74,7 +77,7 @@ func (v *VegaStore) SetMarket(market *vegapb.Market) {
 
 func (v *VegaStore) GetMarket() *vegapb.Market {
 
-	log.Printf("%v", v)
+	// log.Printf("%v", v)
 
 	v.mu.RLock()
 	defer v.mu.RUnlock()
@@ -98,6 +101,7 @@ func (v *VegaStore) SetMarketData(marketData *vegapb.MarketData) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	v.marketData = marketData
+	v.marketDataUpdateCounter++
 }
 
 func (v *VegaStore) GetMarketData() *vegapb.MarketData {
