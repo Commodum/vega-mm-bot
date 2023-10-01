@@ -25,9 +25,97 @@ import (
 	// "golang.org/x/exp/maps"
 )
 
+type agent struct {
+	// An agent will control one wallet and can run multiple strategies
+	pubkey     string
+	balance    decimal.Decimal
+	strategies []*strategy
+}
+
+type Agent interface {
+	// Checks current state of Liquidity Commitment, submits one if it does not exist,
+	// amends it if there are any changes, or does nothing if there are no changes.
+	UpdateLiquidityCommitment(*strategy)
+
+	// Registers a strategy with the agent
+	RegisterStrategy(*strategy)
+
+	// Runs the provided strategy
+	RunStrategy(*strategy)
+
+	// Reports metrics for each running strategy
+	StartMetrics()
+}
+
+type StrategyOpts struct {
+	lpCommitmentSizeUSD     int64
+	maxProbabilityOfTrading float64
+	orderSpacing            float64
+	orderSizeBase           float64
+	numOrdersPerSide        int
+}
+
+type strategy struct {
+	marketId      string
+	binanceMarket string
+
+	opts *StrategyOpts
+
+	vegaStore  *VegaStore
+	vegaClient *VegaClient
+}
+
+type Strategy interface {
+	GetDecimals(*vegapb.Market, *vegapb.Asset) decimals
+
+	// GetOrderSubmissionForSide() []*commandspb.OrderSubmission
+
+	// GetRiskMetricsForMarket(*vegapb.Market)
+
+	// GetEntryPriceAndVolume(decimals, *vegapb.Market, *vegapb.Position) (decimal.Decimal, decimal.Decimal)
+
+	// GetProbabilityOfTradingForPrice() float64
+}
+
 type decimals struct {
 	positionFactor decimal.Decimal
 	priceFactor    decimal.Decimal
+	assetFactor    decimal.Decimal
+}
+
+func (a *agent) UpdateLiquidityCommitment(strat *strategy) {
+	return
+}
+
+func (a *agent) RegisterStrategy(strat *strategy) {
+	return
+}
+
+func (a *agent) RunStrategy(strat *strategy) {
+	return
+}
+
+func (a *agent) StartMetrics() {
+	return
+}
+
+func NewAgent(pubkey string) Agent {
+	return &agent{
+		pubkey:     pubkey,
+		strategies: []*strategy{},
+	}
+}
+
+func (s *strategy) GetDecimals(market *vegapb.Market, asset *vegapb.Asset) decimals {
+	return decimals{
+		positionFactor: decimal.NewFromInt(10).Pow(decimal.NewFromInt(market.PositionDecimalPlaces)),
+		priceFactor:    decimal.NewFromInt(10).Pow(decimal.NewFromInt(int64(market.DecimalPlaces))),
+		assetFactor:    decimal.NewFromInt(10).Pow(decimal.NewFromInt(int64(asset.Details.Decimals))),
+	}
+}
+
+func NewStrategy(opts *StrategyOpts) {
+
 }
 
 func RunStrategy(walletClient *wallet.Client, dataClient *DataClient, apiCh chan *ApiState) {
