@@ -10,10 +10,12 @@ import (
 
 	// "github.com/davecgh/go-spew/spew"
 	apipb "code.vegaprotocol.io/vega/protos/data-node/api/v2"
+	// apipb "vega-mm/protos/data-node/api/v2"
 	vegapb "code.vegaprotocol.io/vega/protos/vega"
 	"github.com/gorilla/websocket"
 	"github.com/shopspring/decimal"
 	"google.golang.org/grpc"
+	// vegapb "vega-mm/protos/vega"
 )
 
 type VegaClient struct {
@@ -201,10 +203,10 @@ func (vegaClient *VegaClient) testGrpcAddresses() {
 
 	}
 
-	fmt.Printf("Successes: %v", successes)
-	fmt.Printf("Failures: %v", failures)
+	fmt.Printf("Successes: %v\n", successes)
+	fmt.Printf("Failures: %v\n", failures)
 
-	fmt.Printf("Setting vegaClient grpcAddress to %v", successes[0])
+	fmt.Printf("Setting vegaClient grpcAddress to %v\n", successes[0])
 	vegaClient.grpcAddr = successes[0]
 }
 

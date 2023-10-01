@@ -10,6 +10,7 @@ import (
 	prom "github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/shopspring/decimal"
+	// vegapb "vega-mm/protos/vega"
 )
 
 type ApiState struct {
@@ -106,5 +107,5 @@ func StartApi(apiCh chan *ApiState) {
 	// })
 
 	http.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{Registry: reg}))
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	log.Fatal(http.ListenAndServe(":8079", nil))
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	// "encoding/json"
 	"log"
 	"math"
 
@@ -18,6 +19,9 @@ import (
 	walletpb "code.vegaprotocol.io/vega/protos/vega/wallet/v1"
 	"github.com/jeremyletang/vega-go-sdk/wallet"
 	"github.com/shopspring/decimal"
+	// vegapb "vega-mm/protos/vega"
+	// commandspb "vega-mm/protos/vega/commands/v1"
+	// walletpb "vega-mm/protos/vega/wallet/v1"
 	// "golang.org/x/exp/maps"
 )
 
@@ -77,7 +81,7 @@ func RunStrategy(walletClient *wallet.Client, dataClient *DataClient, apiCh chan
 			if market := dataClient.s.v[marketId].GetMarket(); market != nil {
 				settlementAsset := market.GetTradableInstrument().
 					GetInstrument().
-					GetFuture().
+					GetPerpetual().
 					GetSettlementAsset()
 				asset := dataClient.s.v[marketId].GetAsset(settlementAsset)
 				logNormalRiskModel := market.GetTradableInstrument().
@@ -249,7 +253,7 @@ func SetLiquidityCommitment(walletClient *wallet.Client, dataClient *DataClient)
 		asset := dataClient.s.v[dataClient.c.LpMarket].GetAsset(
 			market.GetTradableInstrument().
 				GetInstrument().
-				GetFuture().
+				GetPerpetual().
 				GetSettlementAsset(),
 		)
 
