@@ -285,7 +285,7 @@ func SetLiquidityCommitment(walletClient *wallet.Client, dataClient *DataClient)
 func getLiquidityOrders(side vegapb.Side, dataClient *DataClient) []*vegapb.LiquidityOrder {
 
 	offset := 0.0015
-	numOrders := 6
+	numOrders := 5
 
 	sizeF := func(i int) decimal.Decimal {
 		return decimal.NewFromInt(2).Pow(decimal.NewFromInt(int64(i)))
@@ -459,7 +459,7 @@ func getPubkeyBalance(marketId string, vega map[string]*VegaStore, pubkey, asset
 
 func getOrderSubmission(d decimals, ourBestPrice int, vegaSpread, vegaRefPrice, binanceRefPrice, offset, targetVolume, orderReductionAmount decimal.Decimal, side vegapb.Side, marketId string, riskParams *vegapb.LogNormalModelParams, tau float64) []*commandspb.OrderSubmission {
 
-	firstOrderProbabilityOfTrading := decimal.NewFromFloat(0.75)
+	firstOrderProbabilityOfTrading := decimal.NewFromFloat(0.8)
 
 	refPrice, _ := vegaRefPrice.Div(d.priceFactor).Float64()
 
@@ -471,7 +471,7 @@ func getOrderSubmission(d decimals, ourBestPrice int, vegaSpread, vegaRefPrice, 
 
 	orderSpacing := decimal.NewFromFloat(0.001)
 
-	orderSizeBase := 1.65
+	orderSizeBase := 1.5
 
 	numOrders := 6
 	totalOrderSizeUnits := (math.Pow(orderSizeBase, float64(numOrders+1)) - float64(1)) / (orderSizeBase - float64(1))
