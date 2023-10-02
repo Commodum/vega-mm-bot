@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"sync"
 	// "encoding/json"
 	"log"
 	"math"
@@ -29,22 +30,28 @@ type agent struct {
 	// An agent will control one wallet and can run multiple strategies
 	pubkey     string
 	balance    decimal.Decimal
-	strategies []*strategy
+	strategies map[string]*strategy
+	vegaClient *VegaClient
+	config     *Config
+	metricsCh  chan *MetricsState
 }
 
 type Agent interface {
+	// Registers a strategy with the agent
+	RegisterStrategy(*strategy)
+
+	// Start the reconnect handler for the vega client
+	RunVegaClientReconnectHandler()
+
+	// Start streaming data through the vega client
+	StreamVegaData(*sync.WaitGroup)
+
 	// Checks current state of Liquidity Commitment, submits one if it does not exist,
 	// amends it if there are any changes, or does nothing if there are no changes.
 	UpdateLiquidityCommitment(*strategy)
 
-	// Registers a strategy with the agent
-	RegisterStrategy(*strategy)
-
 	// Runs the provided strategy
-	RunStrategy(*strategy)
-
-	// Reports metrics for each running strategy
-	StartMetrics()
+	RunStrategy(*strategy, chan *MetricsState)
 }
 
 type StrategyOpts struct {
@@ -56,13 +63,17 @@ type StrategyOpts struct {
 }
 
 type strategy struct {
-	marketId      string
-	binanceMarket string
+	marketId                string
+	d                       *decimals
+	lpCommitmentSizeUSD     decimal.Decimal
+	maxProbabilityOfTrading decimal.Decimal
+	orderSpacing            decimal.Decimal
+	orderSizeBase           decimal.Decimal
+	numOrdersPerSide        int
 
-	opts *StrategyOpts
+	vegaStore *VegaStore
 
-	vegaStore  *VegaStore
-	vegaClient *VegaClient
+	agent *agent
 }
 
 type Strategy interface {
@@ -83,42 +94,61 @@ type decimals struct {
 	assetFactor    decimal.Decimal
 }
 
+func (agent *agent) RegisterStrategy(strat *strategy) {
+	strat.agent = agent
+	agent.strategies[strat.marketId] = strat
+	return
+}
+
 func (a *agent) UpdateLiquidityCommitment(strat *strategy) {
 	return
 }
 
-func (a *agent) RegisterStrategy(strat *strategy) {
+func (a *agent) RunStrategy(strat *strategy, metricsCh chan *MetricsState) {
 	return
 }
 
-func (a *agent) RunStrategy(strat *strategy) {
-	return
+func (a *agent) StartMetrics() chan *MetricsState {
+	return make(chan *MetricsState)
 }
 
-func (a *agent) StartMetrics() {
-	return
-}
-
-func NewAgent(pubkey string) Agent {
-	return &agent{
+func NewAgent(pubkey string, config *Config) Agent {
+	agent := &agent{
 		pubkey:     pubkey,
-		strategies: []*strategy{},
+		strategies: map[string]*strategy{},
+		vegaClient: &VegaClient{
+			grpcAddr:      config.VegaGrpcAddr,
+			grpcAddresses: strings.Split(config.VegaGrpcAddresses, ","),
+			vegaMarkets:   []string{},
+			reconnChan:    make(chan struct{}),
+			reconnecting:  false,
+		},
+		config:    config,
+		metricsCh: make(chan *MetricsState),
 	}
+	agent.vegaClient.agent = agent
+	return agent
 }
 
-func (s *strategy) GetDecimals(market *vegapb.Market, asset *vegapb.Asset) decimals {
-	return decimals{
+func (s *strategy) GetDecimals(market *vegapb.Market, asset *vegapb.Asset) {
+	s.d = &decimals{
 		positionFactor: decimal.NewFromInt(10).Pow(decimal.NewFromInt(market.PositionDecimalPlaces)),
 		priceFactor:    decimal.NewFromInt(10).Pow(decimal.NewFromInt(int64(market.DecimalPlaces))),
 		assetFactor:    decimal.NewFromInt(10).Pow(decimal.NewFromInt(int64(asset.Details.Decimals))),
 	}
 }
 
-func NewStrategy(opts *StrategyOpts) {
+func NewStrategy(marketId string, opts *StrategyOpts, config *Config) *strategy {
+
+	return &strategy{
+		marketId: marketId,
+
+		vegaStore: newVegaStore(marketId),
+	}
 
 }
 
-func RunStrategy(walletClient *wallet.Client, dataClient *DataClient, apiCh chan *ApiState) {
+func RunStrategy(strat *strategy, apiCh chan *MetricsState) {
 
 	for range time.NewTicker(1500 * time.Millisecond).C {
 		log.Printf("Executing strategy...")
@@ -296,7 +326,7 @@ func RunStrategy(walletClient *wallet.Client, dataClient *DataClient, apiCh chan
 				)
 
 				// log.Printf("%v", submissions)
-				state := &ApiState{
+				state := &MetricsState{
 					MarketId:              marketId,
 					Position:              dataClient.s.v[marketId].GetPosition(),
 					SignedExposure:        signedExposure,

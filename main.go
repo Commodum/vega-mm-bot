@@ -92,11 +92,11 @@ func main() {
 
 	// time.Sleep(1 * time.Second)
 
-	apiCh := make(chan *ApiState)
+	apiCh := make(chan *MetricsState)
 
 	go RunStrategy(walletClient, dataClient, apiCh)
 
-	go StartApi(apiCh)
+	go StartMetricsApi(apiCh)
 
 	gracefulStop := make(chan os.Signal, 1)
 	signal.Notify(gracefulStop, syscall.SIGTERM, syscall.SIGINT)

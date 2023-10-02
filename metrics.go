@@ -13,7 +13,7 @@ import (
 	// vegapb "vega-mm/protos/vega"
 )
 
-type ApiState struct {
+type MetricsState struct {
 	MarketId              string
 	Position              *vegapb.Position
 	SignedExposure        decimal.Decimal
@@ -37,7 +37,7 @@ type PromMetrics struct {
 	MarketDataUpdateCount prom.Gauge
 }
 
-func StartApi(apiCh chan *ApiState) {
+func StartMetricsApi(apiCh chan *MetricsState) {
 
 	reg := prom.NewRegistry()
 	metrics := &PromMetrics{
@@ -84,7 +84,7 @@ func StartApi(apiCh chan *ApiState) {
 	reg.MustRegister(metrics.CumulativeOrderCount)
 	reg.MustRegister(metrics.MarketDataUpdateCount)
 
-	var state *ApiState
+	var state *MetricsState
 	go func() {
 		for {
 			select {
