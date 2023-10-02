@@ -107,8 +107,8 @@ func RunStrategy(walletClient *wallet.Client, dataClient *DataClient, apiCh chan
 				// Determine order sizing from position and balance.
 				// bidVol := decimal.Max(balance.Mul(decimal.NewFromFloat(1.2)).Sub(decimal.NewFromFloat(1.5).Mul(decimal.Max(signedExposure, decimal.NewFromFloat(0)))), decimal.NewFromFloat(0))
 				// askVol := decimal.Max(balance.Mul(decimal.NewFromFloat(1.2)).Add(decimal.NewFromFloat(1.5).Mul(decimal.Min(signedExposure, decimal.NewFromFloat(0)))), decimal.NewFromFloat(0))
-				bidVol := balance.Mul(decimal.NewFromFloat(0.8))
-				askVol := balance.Mul(decimal.NewFromFloat(0.8))
+				bidVol := balance.Mul(decimal.NewFromFloat(1.5))
+				askVol := balance.Mul(decimal.NewFromFloat(1.5))
 
 				log.Printf("Balance: %v", balance)
 				log.Printf("Binance best bid: %v, Binance best ask: %v", binanceBestBid, binanceBestAsk)
@@ -459,7 +459,7 @@ func getPubkeyBalance(marketId string, vega map[string]*VegaStore, pubkey, asset
 
 func getOrderSubmission(d decimals, ourBestPrice int, vegaSpread, vegaRefPrice, binanceRefPrice, offset, targetVolume, orderReductionAmount decimal.Decimal, side vegapb.Side, marketId string, riskParams *vegapb.LogNormalModelParams, tau float64) []*commandspb.OrderSubmission {
 
-	firstOrderProbabilityOfTrading := decimal.NewFromFloat(0.8)
+	firstOrderProbabilityOfTrading := decimal.NewFromFloat(0.825)
 
 	refPrice, _ := vegaRefPrice.Div(d.priceFactor).Float64()
 
@@ -473,7 +473,7 @@ func getOrderSubmission(d decimals, ourBestPrice int, vegaSpread, vegaRefPrice, 
 
 	orderSizeBase := 1.5
 
-	numOrders := 6
+	numOrders := 7
 	totalOrderSizeUnits := (math.Pow(orderSizeBase, float64(numOrders+1)) - float64(1)) / (orderSizeBase - float64(1))
 	// totalOrderSizeUnits := (math.Pow(float64(2), float64(numOrders+1)) - float64(1)) / float64(2-1)
 	orders := []*commandspb.OrderSubmission{}
@@ -568,9 +568,9 @@ func findPriceByProbabilityOfTrading(probability decimal.Decimal, side vegapb.Si
 
 	for calculatedProb > probability.InexactFloat64() {
 		if side == vegapb.Side_SIDE_BUY {
-			price = price - float64(price*0.0005)
+			price = price - float64(price*0.00025)
 		} else {
-			price = price + float64(price*0.0005)
+			price = price + float64(price*0.00025)
 		}
 		calculatedProb = getProbabilityOfTradingForOrder(riskParams.Mu, riskParams.Sigma, tau, minPrice, maxPrice, price, refPrice, side)
 		log.Printf("Side: %v, Price: %v, Last calculated probability: %v, probability: %v", side, price, calculatedProb, probability)
