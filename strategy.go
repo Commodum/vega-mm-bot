@@ -26,6 +26,13 @@ import (
 	// "golang.org/x/exp/maps"
 )
 
+// Note: Prototype feature that checks taker volume across a short time frame and use it to determine whether
+// 		 it is viable to bid at the front of the book. It should be deemed viable when there is adequate and
+// 		 frequent buy and sell volume in very short periods of time. This is to ensure that we can earn the
+//		 maker fee and immediately offload the position on the other side of the book. Consider adding a
+//		 failsafe whereby the strategy will close out the position by crossing the spread if the position is
+//		 too large or is held for too long.
+
 type agent struct {
 	// An agent will control one wallet and can run multiple strategies
 	pubkey     string
