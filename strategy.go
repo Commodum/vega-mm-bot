@@ -33,6 +33,21 @@ import (
 //		 failsafe whereby the strategy will close out the position by crossing the spread if the position is
 //		 too large or is held for too long.
 
+// Note: We need to think about what parameters we want to automatically tune to optimize fee revenue, reduce
+//		 risk, and prevent adverse selection. We also need to consider how we want to automate/tune these params.
+//		 Initially it is likely that the only method within the scope of this project is heuristics based on
+//		 market data such as order flow, liquidity, and volatility across short timeframes. There is potential
+//		 to experiment with RL and other ML strategies, however, there will be numerous challeneges, eg; data
+//		 collection, data formatting, building a training framework, and quantifying model performance during
+//		 training, testing, and live operation.
+//
+//		 Params:
+//			- orderSizeBase
+//			- maxProbabilityOfTrading
+//			- orderSpacing
+//			- targetVolume (bidvol, askVol)
+//
+
 type agent struct {
 	// An agent will control one wallet and can run multiple strategies
 	pubkey     string
