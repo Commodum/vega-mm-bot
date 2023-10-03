@@ -13,6 +13,7 @@ import (
 	// "code.vegaprotocol.io/quant/interfaces"
 	pd "code.vegaprotocol.io/quant/pricedistribution"
 	"code.vegaprotocol.io/quant/riskmodelbs"
+	"code.vegaprotocol.io/vega/protos/vega"
 	vegapb "code.vegaprotocol.io/vega/protos/vega"
 	commandspb "code.vegaprotocol.io/vega/protos/vega/commands/v1"
 	walletpb "code.vegaprotocol.io/vega/protos/vega/wallet/v1"
@@ -239,6 +240,46 @@ func RunStrategy(walletClient *wallet.Client, dataClient *DataClient, apiCh chan
 		}
 
 		// log.Printf("Batch market instructions: %v", batch.String())
+
+	}
+}
+
+func AmendLiquidityCommitment(walletClient *wallet.Client, dataClient *DataClient) {
+
+	if market := dataClient.s.v[dataClient.c.LpMarket].GetMarket(); market != nil {
+		asset := dataClient.s.v[dataClient.c.LpMarket].GetAsset(
+			market.GetTradableInstrument().
+				GetInstrument().
+				GetFuture().
+				GetSettlementAsset(),
+		)
+
+		// Determine LP commitment size
+		commitmentAmountUSD, _ := decimal.NewFromString(dataClient.c.LpCommitmentSizeUSD)
+		commitmentAmount := commitmentAmountUSD.Mul(decimal.NewFromInt(10).Pow(decimal.NewFromInt(int64(asset.Details.Decimals))))
+
+		// Create LP amendment
+		lpAmendment := &commandspb.LiquidityProvisionAmendment{
+			MarketId:         dataClient.c.LpMarket,
+			CommitmentAmount: commitmentAmount.BigInt().String(),
+			Fee:              "0.0001",
+			Sells:            []*vega.LiquidityOrder{},
+			Buys:             []*vega.LiquidityOrder{},
+			Reference:        "Opportunities don't happen, you create them.",
+		}
+
+		// Submit transaction
+		err := walletClient.SendTransaction(
+			context.Background(), dataClient.c.WalletPubkey, &walletpb.SubmitTransactionRequest{
+				Command: &walletpb.SubmitTransactionRequest_LiquidityProvisionAmendment{
+					LiquidityProvisionAmendment: lpAmendment,
+				},
+			},
+		)
+
+		if err != nil {
+			log.Fatalf("Failed to send transaction: failed to amend liquidity commitment: %v", err)
+		}
 
 	}
 }
