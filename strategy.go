@@ -62,12 +62,6 @@ type Agent interface {
 	// Registers a strategy with the agent
 	RegisterStrategy(*strategy)
 
-	// Start the reconnect handler for the vega client
-	RunVegaClientReconnectHandler()
-
-	// Start streaming data through the vega client
-	StreamVegaData(*sync.WaitGroup)
-
 	// Checks current state of Liquidity Commitment, submits one if it does not exist,
 	// amends it if there are any changes, or does nothing if there are no changes.
 	UpdateLiquidityCommitment(*strategy)
@@ -123,6 +117,14 @@ func (agent *agent) RegisterStrategy(strat *strategy) {
 }
 
 func (a *agent) UpdateLiquidityCommitment(strat *strategy) {
+	// Check to see if data streams are live
+
+	// Get commitment for the strategy
+
+	// If we have a commitment, ammend it with the desired settings
+
+	// Else create a new commitment
+
 	return
 }
 
@@ -161,13 +163,15 @@ func (s *strategy) GetDecimals(market *vegapb.Market, asset *vegapb.Asset) {
 }
 
 func NewStrategy(marketId string, opts *StrategyOpts, config *Config) *strategy {
-
 	return &strategy{
-		marketId: marketId,
-
-		vegaStore: newVegaStore(marketId),
+		marketId:                marketId,
+		lpCommitmentSizeUSD:     decimal.NewFromInt(opts.lpCommitmentSizeUSD),
+		maxProbabilityOfTrading: decimal.NewFromFloat(opts.maxProbabilityOfTrading),
+		orderSpacing:            decimal.NewFromFloat(opts.orderSpacing),
+		orderSizeBase:           decimal.NewFromFloat(opts.orderSizeBase),
+		numOrdersPerSide:        opts.numOrdersPerSide,
+		vegaStore:               newVegaStore(marketId),
 	}
-
 }
 
 func RunStrategy(strat *strategy, apiCh chan *MetricsState) {

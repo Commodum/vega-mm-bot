@@ -76,19 +76,19 @@ func (vegaClient *VegaClient) testGrpcAddresses() {
 	vegaClient.grpcAddr = successes[0]
 }
 
-func (agent *agent) RunVegaClientReconnectHandler() {
+func (vegaClient *VegaClient) RunVegaClientReconnectHandler() {
 
 	for {
 		select {
-		case <-agent.vegaClient.reconnChan:
+		case <-vegaClient.reconnChan:
 			log.Println("Recieved event on reconn channel")
 			wg := &sync.WaitGroup{}
 			wg.Add(1)
-			go agent.StreamVegaData(wg)
+			go vegaClient.StreamVegaData(wg)
 			log.Println("Waiting for new vega data streams")
 			wg.Wait()
 			log.Println("Finished waiting for new vega data streams")
-			agent.vegaClient.reconnecting = false
+			vegaClient.reconnecting = false
 		}
 	}
 }
@@ -105,38 +105,38 @@ func (vegaClient *VegaClient) handleGrpcReconnect() {
 	vegaClient.reconnChan <- struct{}{}
 }
 
-func (agent *agent) StreamVegaData(wg *sync.WaitGroup) {
+func (vegaClient *VegaClient) StreamVegaData(wg *sync.WaitGroup) {
 
 	// Test all available addresses
-	agent.vegaClient.testGrpcAddresses()
+	vegaClient.testGrpcAddresses()
 
-	conn, err := grpc.Dial(agent.vegaClient.grpcAddr, grpc.WithInsecure())
+	conn, err := grpc.Dial(vegaClient.grpcAddr, grpc.WithInsecure())
 	if err != nil {
 		log.Printf("Could not open connection to datanode: %v\n", err)
-		agent.vegaClient.handleGrpcReconnect()
+		vegaClient.handleGrpcReconnect()
 		return
 	}
 
-	agent.vegaClient.svc = apipb.NewTradingDataServiceClient(conn)
+	vegaClient.svc = apipb.NewTradingDataServiceClient(conn)
 
 	// marketIds := reflect.ValueOf(agent.strategies).MapKeys()
 
 	// Load initial data
-	agent.vegaClient.loadMarkets()
-	agent.vegaClient.loadMarketData()
-	agent.vegaClient.loadAccounts()
-	agent.vegaClient.loadOrders()
-	agent.vegaClient.loadPositions()
-	agent.vegaClient.loadAssets()
-	agent.vegaClient.loadLiquidityProvisions()
+	vegaClient.loadMarkets()
+	vegaClient.loadMarketData()
+	vegaClient.loadAccounts()
+	vegaClient.loadOrders()
+	vegaClient.loadPositions()
+	vegaClient.loadAssets()
+	vegaClient.loadLiquidityProvisions()
 
 	// spew.Dump(d.s.v)
 
 	// Start streams
-	go agent.vegaClient.streamMarketData()
-	go agent.vegaClient.streamAccounts()
-	go agent.vegaClient.streamOrders()
-	go agent.vegaClient.streamPositions()
+	go vegaClient.streamMarketData()
+	go vegaClient.streamAccounts()
+	go vegaClient.streamOrders()
+	go vegaClient.streamPositions()
 
 	wg.Done()
 }
