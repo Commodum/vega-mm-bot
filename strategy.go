@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"sync"
+	// "sync"
 	// "encoding/json"
 	"log"
 	"math"
@@ -174,7 +174,7 @@ func (a *agent) RunStrategy(strat *strategy, metricsCh chan *MetricsState) {
 			vegaSpread             = vegaBestAsk.Sub(vegaBestBid)
 			ourBestBid, ourBestAsk = strat.getOurBestBidAndAsk(liveOrders)
 			// ourSpread              = ourBestAsk.Sub(ourBestBid)
-			openVol, avgEntryPrice = strat.getEntryPriceAndVolume(strat.d, strat.vegaStore.GetMarket(), strat.vegaStore.GetPosition())
+			openVol, avgEntryPrice = strat.getEntryPriceAndVolume()
 			notionalExposure       = avgEntryPrice.Mul(openVol).Abs()
 			signedExposure         = avgEntryPrice.Mul(openVol)
 			balance                = getPubkeyBalance(strat.vegaStore, strat.agent.pubkey, settlementAsset, strat.d.assetFactor)
@@ -459,9 +459,9 @@ func (strat *strategy) getOurBestBidAndAsk(liveOrders []*vegapb.Order) (decimal.
 	return decimal.NewFromInt(int64(ourBestBid)).Div(strat.d.priceFactor), decimal.NewFromInt(int64(ourBestAsk)).Div(strat.d.priceFactor)
 }
 
-func (strat *strategy) getEntryPriceAndVolume(market *vegapb.Market, position *vegapb.Position) (volume, entryPrice decimal.Decimal) {
+func (strat *strategy) getEntryPriceAndVolume() (volume, entryPrice decimal.Decimal) {
 
-	if position == nil {
+	if strat.vegaStore.GetPosition() == nil {
 		return
 	}
 

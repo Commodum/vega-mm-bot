@@ -2,14 +2,18 @@ package main
 
 import (
 	// "fmt"
+	"encoding/json"
 	"flag"
 	"log"
 	"os"
 )
 
+type StrategyConfig struct {
+}
+
 type Config struct {
 	VegaGrpcAddr        string
-	VegaGrpcAddresses	string
+	VegaGrpcAddresses   string
 	BinanceWsAddr       string
 	WalletServiceAddr   string
 	WalletToken         string
@@ -56,7 +60,7 @@ func parseFlags() *Config {
 
 	return &Config{
 		VegaGrpcAddr:        vegaGrpcAddr,
-		VegaGrpcAddresses:	 vegaGrpcAddresses,
+		VegaGrpcAddresses:   vegaGrpcAddresses,
 		BinanceWsAddr:       binanceWsAddr,
 		WalletServiceAddr:   walletServiceAddr,
 		WalletToken:         walletToken,
@@ -73,4 +77,10 @@ func getFlag(flag, env string) string {
 		return env
 	}
 	return flag
+}
+
+// We want to load our strategies from a JSON file. We also want to update this file with any changes
+// to the strategy that are triggered via the admin API, which we will build later.
+func loadStrategiesConfig() {
+
 }
