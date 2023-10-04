@@ -37,7 +37,7 @@ type PromMetrics struct {
 	MarketDataUpdateCount prom.Gauge
 }
 
-func StartMetricsApi(apiCh chan *MetricsState) {
+func StartMetricsApi(metricsCh chan *MetricsState) {
 
 	reg := prom.NewRegistry()
 	metrics := &PromMetrics{
@@ -88,7 +88,7 @@ func StartMetricsApi(apiCh chan *MetricsState) {
 	go func() {
 		for {
 			select {
-			case state = <-apiCh:
+			case state = <-metricsCh:
 				metrics.SignedExposure.Set(state.SignedExposure.InexactFloat64())
 				metrics.VegaBestBid.Set(state.VegaBestBid.InexactFloat64())
 				metrics.OurBestBid.Set(state.OurBestBid.InexactFloat64())
