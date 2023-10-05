@@ -4,12 +4,10 @@ import (
 	// "fmt"
 	"encoding/json"
 	"flag"
+	"io"
 	"log"
 	"os"
 )
-
-type StrategyConfig struct {
-}
 
 type Config struct {
 	VegaGrpcAddr        string
@@ -22,6 +20,25 @@ type Config struct {
 	BinanceMarkets      string
 	LpMarket            string
 	LpCommitmentSizeUSD string
+}
+
+type AgentConfig struct {
+	AgentId int    `json:"agentId"`
+	Pubkey  string `json:"pubkey"`
+}
+
+type StrategyConfig struct {
+	MarketId                string  `json:"marketId"`
+	LpCommitmentSizeUSD     int64   `json:"lpCommitmentSizeUSD"`
+	MaxProbabilityOfTrading float64 `json:"maxProbabilityOfTrading"`
+	OrderSpacing            float64 `json:"orderSpacing"`
+	OrderSizeBase           float64 `json:"orderSizeBase"`
+	TargetVolCoefficient    float64 `json:"targetVolCoefficient"`
+	NumOrdersPerSide        int     `json:"numOrdersPerSide"`
+}
+
+type JsonConfig struct {
+	strategies []StrategyConfig
 }
 
 func parseFlags() *Config {
@@ -81,6 +98,33 @@ func getFlag(flag, env string) string {
 
 // We want to load our strategies from a JSON file. We also want to update this file with any changes
 // to the strategy that are triggered via the admin API, which we will build later.
-func loadStrategiesConfig() {
+func loadJsonConfig() *StrategyOpts {
 
+	jsonConfig := &JsonConfig{}
+
+	jsonFile, err := os.Open("config.json")
+	if err != nil {
+		log.Fatalf("Could not read from json file: %v", err)
+	}
+	defer jsonFile.Close()
+
+	bytes, _ := io.ReadAll(jsonFile)
+
+	json.Unmarshal(bytes, jsonConfig)
+
+	log.Printf("Unmarshalled json into config: %v+\n", jsonConfig)
+
+	os.Exit(0)
+
+	strats := jsonConfig.strategies
+
+	return &StrategyOpts{
+		marketId:                strats[0].MarketId,
+		lpCommitmentSizeUSD:     strats[0].LpCommitmentSizeUSD,
+		maxProbabilityOfTrading: strats[0].MaxProbabilityOfTrading,
+		orderSpacing:            strats[0].OrderSpacing,
+		orderSizeBase:           strats[0].OrderSizeBase,
+		targetVolCoefficient:    strats[0].TargetVolCoefficient,
+		numOrdersPerSide:        strats[0].NumOrdersPerSide,
+	}
 }

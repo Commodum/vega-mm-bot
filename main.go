@@ -76,27 +76,30 @@ func main() {
 		log.Fatalf("Could not connect to wallet: %v", err)
 	}
 
-	store := newDataStore()
-	dataClient := newDataClient(config, store)
+	agent := NewAgent(walletClient, config)
+
+	// Load strategyOpts from file
+	stratOpts := loadJsonConfig()
+
+	strategy := NewStrategy(stratOpts, config)
+
+	agent.RegisterStrategy(strategy)
 
 	var wg sync.WaitGroup
-	wg.Add(2)
+	wg.Add(1)
 
-	go dataClient.runVegaClientReconnectHandler()
-	go dataClient.streamBinanceData(&wg)
-	go dataClient.streamVegaData(&wg)
+	go agent.VegaClient().RunVegaClientReconnectHandler()
+	go agent.VegaClient().StreamVegaData(&wg)
 
 	wg.Wait()
 
-	// SetLiquidityCommitment(walletClient, dataClient)
+	agent.UpdateLiquidityCommitment(strategy)
 
-	// time.Sleep(1 * time.Second)
+	metricsCh := make(chan *MetricsState)
 
-	apiCh := make(chan *MetricsState)
+	go agent.RunStrategy(strategy, metricsCh)
 
-	go RunStrategy(walletClient, dataClient, apiCh)
-
-	go StartMetricsApi(apiCh)
+	go StartMetricsApi(metricsCh)
 
 	gracefulStop := make(chan os.Signal, 1)
 	signal.Notify(gracefulStop, syscall.SIGTERM, syscall.SIGINT)
