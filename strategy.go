@@ -108,8 +108,8 @@ func RunStrategy(walletClient *wallet.Client, dataClient *DataClient, apiCh chan
 				// Determine order sizing from position and balance.
 				// bidVol := decimal.Max(balance.Mul(decimal.NewFromFloat(1.2)).Sub(decimal.NewFromFloat(1.5).Mul(decimal.Max(signedExposure, decimal.NewFromFloat(0)))), decimal.NewFromFloat(0))
 				// askVol := decimal.Max(balance.Mul(decimal.NewFromFloat(1.2)).Add(decimal.NewFromFloat(1.5).Mul(decimal.Min(signedExposure, decimal.NewFromFloat(0)))), decimal.NewFromFloat(0))
-				bidVol := balance.Mul(decimal.NewFromFloat(1.25))
-				askVol := balance.Mul(decimal.NewFromFloat(1.25))
+				bidVol := balance.Mul(decimal.NewFromFloat(1.))
+				askVol := balance.Mul(decimal.NewFromFloat(1.))
 
 				log.Printf("Balance: %v", balance)
 				log.Printf("Binance best bid: %v, Binance best ask: %v", binanceBestBid, binanceBestAsk)
@@ -127,11 +127,11 @@ func RunStrategy(walletClient *wallet.Client, dataClient *DataClient, apiCh chan
 				switch true {
 				case signedExposure.LessThan(balance.Mul(decimal.NewFromFloat(neutralityThresholds[0])).Mul(decimal.NewFromInt(-1))):
 					// Step back ask
-					askOffset = decimal.NewFromFloat(0.0025)
+					askOffset = decimal.NewFromFloat(0.003)
 					break
 				case signedExposure.GreaterThan(balance.Mul(decimal.NewFromFloat(neutralityThresholds[0]))):
 					// Step back bid
-					bidOffset = decimal.NewFromFloat(0.0025)
+					bidOffset = decimal.NewFromFloat(0.003)
 					break
 				}
 
@@ -500,7 +500,7 @@ func getPubkeyBalance(marketId string, vega map[string]*VegaStore, pubkey, asset
 
 func getOrderSubmission(d decimals, ourBestPrice int, vegaSpread, vegaRefPrice, binanceRefPrice, offset, targetVolume, orderReductionAmount decimal.Decimal, side vegapb.Side, marketId string, riskParams *vegapb.LogNormalModelParams, tau float64) []*commandspb.OrderSubmission {
 
-	firstOrderProbabilityOfTrading := decimal.NewFromFloat(0.675)
+	firstOrderProbabilityOfTrading := decimal.NewFromFloat(0.825)
 
 	refPrice, _ := vegaRefPrice.Div(d.priceFactor).Float64()
 
@@ -512,7 +512,7 @@ func getOrderSubmission(d decimals, ourBestPrice int, vegaSpread, vegaRefPrice, 
 
 	orderSpacing := decimal.NewFromFloat(0.001)
 
-	orderSizeBase := 1.75
+	orderSizeBase := 2.
 
 	numOrders := 8
 	totalOrderSizeUnits := (math.Pow(orderSizeBase, float64(numOrders+1)) - float64(1)) / (orderSizeBase - float64(1))
@@ -548,7 +548,7 @@ func getOrderSubmission(d decimals, ourBestPrice int, vegaSpread, vegaRefPrice, 
 	priceF := func(i int) decimal.Decimal {
 
 		if i == 1 && offset.IsZero() {
-			log.Printf("Our best bid: %v", ourBestPrice)
+			// log.Printf("Our best bid: %v", ourBestPrice)
 			return decimal.NewFromFloat(firstPrice)
 		}
 		return decimal.NewFromFloat(firstPrice).Mul(decimal.NewFromInt(1).Sub(decimal.NewFromInt(int64(i)).Mul(orderSpacing)).Sub(offset))
@@ -559,13 +559,27 @@ func getOrderSubmission(d decimals, ourBestPrice int, vegaSpread, vegaRefPrice, 
 
 		priceF = func(i int) decimal.Decimal {
 			if i == 1 && offset.IsZero() {
-				log.Printf("Our best ask: %v", ourBestPrice)
+				// log.Printf("Our best ask: %v", ourBestPrice)
 				return decimal.NewFromFloat(firstPrice)
 			}
 			return decimal.NewFromFloat(firstPrice).Mul(decimal.NewFromInt(1).Add(decimal.NewFromInt(int64(i)).Mul(orderSpacing)).Add(offset))
 		}
 
 	}
+
+	modelParams := riskmodelbs.ModelParamsBS{
+		Mu:    riskParams.Mu,
+		R:     riskParams.R,
+		Sigma: riskParams.Sigma,
+	}
+	dist := modelParams.GetProbabilityDistribution(refPrice, tau)
+	minPrice, maxPrice := pd.PriceRange(dist, 0.9999) //probability.InexactFloat64())
+	// for _, x := range []float64{0.95, 0.96, 0.97, 0.98, 0.99, 0.999, 0.9999} {
+	// 	minPrice, maxPrice := pd.PriceRange(dist, x)
+	// 	log.Printf("prob: %v, minPrice: %v, maxPrice: %v\n", x, minPrice, maxPrice)
+	// }
+
+	pseudoLiquidityScore := 0.0
 
 	for i := 1; i <= numOrders; i++ {
 		orders = append(orders, &commandspb.OrderSubmission{
@@ -579,7 +593,12 @@ func getOrderSubmission(d decimals, ourBestPrice int, vegaSpread, vegaRefPrice, 
 			PostOnly:    true,
 			Reference:   "ref",
 		})
+		prob := getProbabilityOfTradingForOrder(riskParams.Mu, riskParams.Sigma, tau, minPrice, maxPrice, priceF(i).InexactFloat64(), refPrice, side)
+		log.Printf("price: %v, size: %v, probability: %v, size*probability: %v\n", priceF(i).InexactFloat64(), sizeF(i).InexactFloat64(), prob, sizeF(i).InexactFloat64()*prob)
+		pseudoLiquidityScore += (sizeF(i).InexactFloat64() * getProbabilityOfTradingForOrder(riskParams.Mu, riskParams.Sigma, tau, minPrice, maxPrice, priceF(i).InexactFloat64(), refPrice, side))
 	}
+
+	log.Printf("side: %v, pseudoLiquidityScore: %v\n", side, pseudoLiquidityScore)
 
 	return orders
 }
@@ -600,7 +619,7 @@ func findPriceByProbabilityOfTrading(probability decimal.Decimal, side vegapb.Si
 	dist := modelParams.GetProbabilityDistribution(refPrice, tau)
 
 	// Get price range from distribution
-	minPrice, maxPrice := pd.PriceRange(dist, probability.InexactFloat64())
+	minPrice, maxPrice := pd.PriceRange(dist, 0.9999)
 
 	log.Printf("minPrice: %v, maxPrice: %v", minPrice, maxPrice)
 
@@ -609,9 +628,9 @@ func findPriceByProbabilityOfTrading(probability decimal.Decimal, side vegapb.Si
 
 	for calculatedProb > probability.InexactFloat64() {
 		if side == vegapb.Side_SIDE_BUY {
-			price = price - float64(price*0.00025)
+			price = price - float64(price*0.00075)
 		} else {
-			price = price + float64(price*0.00025)
+			price = price + float64(price*0.00075)
 		}
 		calculatedProb = getProbabilityOfTradingForOrder(riskParams.Mu, riskParams.Sigma, tau, minPrice, maxPrice, price, refPrice, side)
 		log.Printf("Side: %v, Price: %v, Last calculated probability: %v, probability: %v", side, price, calculatedProb, probability)
