@@ -21,9 +21,9 @@ const (
 	defaultBinanceWsAddr       = "wss://stream.binance.com:443/ws"
 	defaultWalletServiceAddr   = "http://127.0.0.1:1788" // Note: Fairground wallet running on port 1788
 	defaultWalletPubkey        = ""
-	defaultVegaMarkets         = "2fb61fb4a0ab63c7644d523efbd61b5236d90c7877b5b749c98f22988bac61ee"
+	defaultVegaMarkets         = "69abf5c456c20f4d189cea79a11dfd6b0958ead58ab34bd66f73eea48aee600c"
 	defaultBinanceMarkets      = "BTCUSDT,ETHUSDT,LINKUSDT"
-	defaultLpMarket            = "2fb61fb4a0ab63c7644d523efbd61b5236d90c7877b5b749c98f22988bac61ee"
+	defaultLpMarket            = "69abf5c456c20f4d189cea79a11dfd6b0958ead58ab34bd66f73eea48aee600c"
 	defaultLpCommitmentSizeUSD = "5000"
 )
 
@@ -78,10 +78,21 @@ func main() {
 
 	agent := NewAgent(walletClient, config)
 
-	// Load strategyOpts from file
-	stratOpts := loadJsonConfig()
+	// Load strategyOpts from file.
+	// Note: Don't do this, just use flags...
+	// stratOpts := loadJsonConfig()
 
-	strategy := NewStrategy(stratOpts, config)
+	strategyOpts := &StrategyOpts{
+		marketId:                "69abf5c456c20f4d189cea79a11dfd6b0958ead58ab34bd66f73eea48aee600c",
+		lpCommitmentSizeUSD:     5000,
+		maxProbabilityOfTrading: 0.8,
+		orderSpacing:            0.001,
+		orderSizeBase:           2.0,
+		targetVolCoefficient:    1.25,
+		numOrdersPerSide:        8,
+	}
+
+	strategy := NewStrategy(strategyOpts, config)
 
 	agent.RegisterStrategy(strategy)
 
@@ -92,6 +103,8 @@ func main() {
 	go agent.VegaClient().StreamVegaData(&wg)
 
 	wg.Wait()
+
+	agent.LoadDecimals()
 
 	agent.UpdateLiquidityCommitment(strategy)
 

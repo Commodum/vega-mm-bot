@@ -100,6 +100,12 @@ func getFlag(flag, env string) string {
 // to the strategy that are triggered via the admin API, which we will build later.
 func loadJsonConfig() *StrategyOpts {
 
+	cwd, err := os.Getwd()
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Println(cwd)
+
 	jsonConfig := &JsonConfig{}
 
 	jsonFile, err := os.Open("config.json")

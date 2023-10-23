@@ -67,6 +67,9 @@ type Agent interface {
 
 	VegaClient() *VegaClient
 
+	// Loads the decimal data for each registered strategy
+	LoadDecimals()
+
 	// Checks current state of Liquidity Commitment, submits one if it does not exist,
 	// amends it if there are any changes, or does nothing if there are no changes.
 	UpdateLiquidityCommitment(*strategy)
@@ -145,7 +148,23 @@ func (agent *agent) RegisterStrategy(strat *strategy) {
 	}
 	strat.agent = agent
 	agent.strategies[strat.marketId] = strat
+	agent.vegaClient.vegaMarkets = append(agent.vegaClient.vegaMarkets, strat.marketId)
 	return
+}
+
+func (agent *agent) LoadDecimals() {
+	for _, marketId := range agent.vegaClient.vegaMarkets {
+
+		strat := agent.strategies[marketId]
+		market := strat.vegaStore.GetMarket()
+		asset := strat.vegaStore.GetAsset(market.GetTradableInstrument().GetInstrument().GetPerpetual().SettlementAsset)
+
+		strat.d = &decimals{
+			positionFactor: decimal.NewFromInt(10).Pow(decimal.NewFromInt(market.PositionDecimalPlaces)),
+			priceFactor:    decimal.NewFromInt(10).Pow(decimal.NewFromInt(int64(market.DecimalPlaces))),
+			assetFactor:    decimal.NewFromInt(10).Pow(decimal.NewFromInt(int64(asset.Details.Decimals))),
+		}
+	}
 }
 
 func (agent *agent) VegaClient() *VegaClient {
@@ -317,7 +336,7 @@ func NewAgent(walletClient *wallet.Client, config *Config) Agent {
 		vegaClient: &VegaClient{
 			grpcAddr:      config.VegaGrpcAddr,
 			grpcAddresses: strings.Split(config.VegaGrpcAddresses, ","),
-			vegaMarkets:   []string{},
+			vegaMarkets:   []string{}, // strings.Split(config.VegaMarkets, ","),
 			reconnChan:    make(chan struct{}),
 			reconnecting:  false,
 		},
