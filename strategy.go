@@ -167,6 +167,18 @@ func RunStrategy(walletClient *wallet.Client, dataClient *DataClient, apiCh chan
 				// We want to stay as neutral as possible even below the neutrality threshold, so we should place an
 				// order at the best bid or best ask with size equal to our exposure, this will close out our
 				// exposure as soon as possible.
+				// Note: If the price moves very fast one way and we get filled, this method will offload the exposure
+				// 		 as fast as possible but at the expense of getting poor execution because we push to the front
+				//		 of the book.
+				//
+				//		 A potential alternative might be to build a set of smaller orders in a martingale
+				//		 distribution so that as the price moves back we get better and better execution. The downside
+				// 		 of this is that we might not offload the exposure fast enough and the price can move against us.
+				//
+				//		 Another alternative is to simply keep the exposure and hedge it on a different market elsewhere
+				//		 either on another market on Vega or on a centralized exchange with low fees eg; Binance
+				//		 In this scenario we would want to closely track our PnLs on both exchanges and compare the total
+				//		 PnL to alternative strategies.
 				if !openVol.IsZero() {
 
 					var price decimal.Decimal
@@ -178,19 +190,6 @@ func RunStrategy(walletClient *wallet.Client, dataClient *DataClient, apiCh chan
 						side = vegapb.Side_SIDE_BUY
 						price = vegaBestBid
 					}
-
-					// Note: If the price moves very fast one way and we get filled, this method will offload the exposure
-					// 		 as fast as possible but at the expense of getting poor execution because we push to the front
-					//		 of the book.
-					//
-					//		 A potential alternative might be to build a set of smaller orders in a martingale
-					//		 distribution so that as the price moves back we get better and better execution. The downside
-					// 		 of this is that we might not offload the exposure fast enough and the price can move against us.
-					//
-					//		 Another alternative is to simply keep the exposure and hedge it on a different market elsewhere
-					//		 either on another market on Vega or on a centralized exchange with low fees eg; Binance
-					//		 In this scenario we would want to closely track our PnLs on both exchanges and compare the total
-					//		 PnL to alternative strategies.
 
 					// Build and append neutrality order
 					submissions = append(submissions, &commandspb.OrderSubmission{
