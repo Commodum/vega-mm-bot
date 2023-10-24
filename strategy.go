@@ -191,6 +191,10 @@ func RunStrategy(walletClient *wallet.Client, dataClient *DataClient, apiCh chan
 						price = vegaBestBid
 					}
 
+					// Keep compiler happy while not using neutrality order
+					_ = price
+					_ = side
+
 					// Build and append neutrality order
 					submissions = append(submissions, &commandspb.OrderSubmission{
 						MarketId:    marketId,
@@ -512,7 +516,7 @@ func getPubkeyBalance(marketId string, vega map[string]*VegaStore, pubkey, asset
 
 func getOrderSubmission(d decimals, ourBestPrice int, vegaSpread, vegaRefPrice, binanceRefPrice, offset, targetVolume, orderReductionAmount decimal.Decimal, side vegapb.Side, marketId string, riskParams *vegapb.LogNormalModelParams, tau float64) []*commandspb.OrderSubmission {
 
-	firstOrderProbabilityOfTrading := decimal.NewFromFloat(0.80)
+	firstOrderProbabilityOfTrading := decimal.NewFromFloat(0.85)
 
 	refPrice, _ := vegaRefPrice.Div(d.priceFactor).Float64()
 
@@ -526,7 +530,7 @@ func getOrderSubmission(d decimals, ourBestPrice int, vegaSpread, vegaRefPrice, 
 
 	orderSizeBase := 2.
 
-	numOrders := 8
+	numOrders := 10
 	totalOrderSizeUnits := (math.Pow(orderSizeBase, float64(numOrders+1)) - float64(1)) / (orderSizeBase - float64(1))
 	// totalOrderSizeUnits := (math.Pow(float64(2), float64(numOrders+1)) - float64(1)) / float64(2-1)
 	orders := []*commandspb.OrderSubmission{}
