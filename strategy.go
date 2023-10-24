@@ -246,10 +246,21 @@ func (a *agent) RunStrategy(strat *strategy, metricsCh chan *MetricsState) {
 
 		// We want to stay neutral so we place an order at the best bid or best ask with size equal to our
 		// exposure, this will close out our exposure as soon as possible.
-		// Note: We could later on make this a set of orders with a martingale distribution over a tight price
-		//		 very close to the best bid. This could make it slower to close out but may give us better
-		//		 execution. Or we could just push our existing orders on that side to the front of the book
-		//		 by modifying the offset for that side.
+		// Note: If the price moves very fast one way and we get filled, this method will offload the exposure
+		// 		 as fast as possible but at the expense of getting poor execution because we push to the front
+		//		 of the book.
+		//
+		// 		 We could later on make this a set of orders with a martingale distribution over a tight price
+		//		 very close to the best order. This could make it slower to close out but may give us better
+		//		 execution, the main risk would then be that the market would move against us. Alternatively
+		//		 we could just push our existing orders on that side to the front of the book by modifying the
+		//		 offset for that side.
+		//
+		//		 Another alternative is to simply keep the exposure and hedge it on a different market elsewhere
+		//		 either on another market on Vega or on a centralized exchange with low fees eg; Binance
+		//		 In this scenario we would want to closely track our PnLs on both exchanges and compare the total
+		//		 PnL to alternative strategies. We would also want to periodically flatten our inventory on both
+		//		 exchanges so that we are using our margin efficiently and not risking running out of margin.
 		if !openVol.IsZero() {
 
 			var price decimal.Decimal
