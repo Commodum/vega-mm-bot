@@ -108,8 +108,8 @@ func RunStrategy(walletClient *wallet.Client, dataClient *DataClient, apiCh chan
 				// Determine order sizing from position and balance.
 				// bidVol := decimal.Max(balance.Mul(decimal.NewFromFloat(1.2)).Sub(decimal.NewFromFloat(1.5).Mul(decimal.Max(signedExposure, decimal.NewFromFloat(0)))), decimal.NewFromFloat(0))
 				// askVol := decimal.Max(balance.Mul(decimal.NewFromFloat(1.2)).Add(decimal.NewFromFloat(1.5).Mul(decimal.Min(signedExposure, decimal.NewFromFloat(0)))), decimal.NewFromFloat(0))
-				bidVol := balance.Mul(decimal.NewFromFloat(1.))
-				askVol := balance.Mul(decimal.NewFromFloat(1.))
+				bidVol := balance.Mul(decimal.NewFromFloat(1.1))
+				askVol := balance.Mul(decimal.NewFromFloat(1.1))
 
 				log.Printf("Balance: %v", balance)
 				log.Printf("Binance best bid: %v, Binance best ask: %v", binanceBestBid, binanceBestAsk)
@@ -178,6 +178,19 @@ func RunStrategy(walletClient *wallet.Client, dataClient *DataClient, apiCh chan
 						side = vegapb.Side_SIDE_BUY
 						price = vegaBestBid
 					}
+
+					// Note: If the price moves very fast one way and we get filled, this method will offload the exposure
+					// 		 as fast as possible but at the expense of getting poor execution because we push to the front
+					//		 of the book.
+					//
+					//		 A potential alternative might be to build a set of smaller orders in a martingale
+					//		 distribution so that as the price moves back we get better and better execution. The downside
+					// 		 of this is that we might not offload the exposure fast enough and the price can move against us.
+					//
+					//		 Another alternative is to simply keep the exposure and hedge it on a different market elsewhere
+					//		 either on another market on Vega or on a centralized exchange with low fees eg; Binance
+					//		 In this scenario we would want to closely track our PnLs on both exchanges and compare the total
+					//		 PnL to alternative strategies.
 
 					// Build and append neutrality order
 					submissions = append(submissions, &commandspb.OrderSubmission{
@@ -500,7 +513,7 @@ func getPubkeyBalance(marketId string, vega map[string]*VegaStore, pubkey, asset
 
 func getOrderSubmission(d decimals, ourBestPrice int, vegaSpread, vegaRefPrice, binanceRefPrice, offset, targetVolume, orderReductionAmount decimal.Decimal, side vegapb.Side, marketId string, riskParams *vegapb.LogNormalModelParams, tau float64) []*commandspb.OrderSubmission {
 
-	firstOrderProbabilityOfTrading := decimal.NewFromFloat(0.825)
+	firstOrderProbabilityOfTrading := decimal.NewFromFloat(0.80)
 
 	refPrice, _ := vegaRefPrice.Div(d.priceFactor).Float64()
 
