@@ -108,8 +108,8 @@ func RunStrategy(walletClient *wallet.Client, dataClient *DataClient, apiCh chan
 				// Determine order sizing from position and balance.
 				// bidVol := decimal.Max(balance.Mul(decimal.NewFromFloat(1.2)).Sub(decimal.NewFromFloat(1.5).Mul(decimal.Max(signedExposure, decimal.NewFromFloat(0)))), decimal.NewFromFloat(0))
 				// askVol := decimal.Max(balance.Mul(decimal.NewFromFloat(1.2)).Add(decimal.NewFromFloat(1.5).Mul(decimal.Min(signedExposure, decimal.NewFromFloat(0)))), decimal.NewFromFloat(0))
-				bidVol := balance.Mul(decimal.NewFromFloat(1.1))
-				askVol := balance.Mul(decimal.NewFromFloat(1.1))
+				bidVol := balance.Mul(decimal.NewFromFloat(0.9))
+				askVol := balance.Mul(decimal.NewFromFloat(0.9))
 
 				log.Printf("Balance: %v", balance)
 				log.Printf("Binance best bid: %v, Binance best ask: %v", binanceBestBid, binanceBestAsk)
