@@ -120,18 +120,18 @@ func RunStrategy(walletClient *wallet.Client, dataClient *DataClient, apiCh chan
 				// If we are exposed long then asks have no offset while bids have an offset. Vice versa for short exposure.
 				// If exposure is below a threshold in either direction then there set both offsets to 0.
 				// neutralityThreshold := 0.02
-				neutralityThresholds := []float64{0.02, 0.05, 0.1}
+				neutralityThresholds := []float64{0.01, 0.03, 0.05}
 				bidOffset := decimal.NewFromInt(0)
 				askOffset := decimal.NewFromInt(0)
 
 				switch true {
 				case signedExposure.LessThan(balance.Mul(decimal.NewFromFloat(neutralityThresholds[0])).Mul(decimal.NewFromInt(-1))):
 					// Step back ask
-					askOffset = decimal.NewFromFloat(0.003)
+					askOffset = decimal.NewFromFloat(0.005)
 					break
 				case signedExposure.GreaterThan(balance.Mul(decimal.NewFromFloat(neutralityThresholds[0]))):
 					// Step back bid
-					bidOffset = decimal.NewFromFloat(0.003)
+					bidOffset = decimal.NewFromFloat(0.005)
 					break
 				}
 
@@ -202,7 +202,7 @@ func RunStrategy(walletClient *wallet.Client, dataClient *DataClient, apiCh chan
 						Size:        openVol.Mul(d.positionFactor).Abs().BigInt().Uint64(),
 						Side:        side,
 						TimeInForce: vegapb.Order_TIME_IN_FORCE_GTT,
-						ExpiresAt:   int64(time.Now().UnixNano() + 5*1e9),
+						ExpiresAt:   int64(time.Now().UnixNano() + 7*1e9),
 						Type:        vegapb.Order_TYPE_LIMIT,
 						PostOnly:    true,
 						Reference:   "ref",
@@ -604,7 +604,7 @@ func getOrderSubmission(d decimals, ourBestPrice int, vegaSpread, vegaRefPrice, 
 			Size:        sizeF(i).Mul(d.positionFactor).BigInt().Uint64(),
 			Side:        side,
 			TimeInForce: vegapb.Order_TIME_IN_FORCE_GTT,
-			ExpiresAt:   int64(time.Now().UnixNano() + 5*1e9),
+			ExpiresAt:   int64(time.Now().UnixNano() + 7*1e9),
 			Type:        vegapb.Order_TYPE_LIMIT,
 			PostOnly:    true,
 			Reference:   "ref",
