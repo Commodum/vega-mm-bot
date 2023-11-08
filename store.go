@@ -3,6 +3,7 @@ package main
 import (
 	// "fmt"
 	// "log"
+	"log"
 	"sync"
 
 	// "github.com/gorilla/websocket"
@@ -24,6 +25,7 @@ type VegaStore struct {
 	orders             map[string]*vegapb.Order
 	position           *vegapb.Position
 	liquidityProvision *vegapb.LiquidityProvision
+	stakeToCcyVolume   string
 
 	marketDataUpdateCounter int64
 }
@@ -168,6 +170,22 @@ func (v *VegaStore) GetLiquidityProvision() *vegapb.LiquidityProvision {
 	v.mu.RLock()
 	defer v.mu.RUnlock()
 	return v.liquidityProvision
+}
+
+func (v *VegaStore) SetStakeToCcyVolume(netParam *vegapb.NetworkParameter) {
+	if netParam.Key != "market.liquidity.stakeToCcyVolume" {
+		log.Printf("Incorrect net param provided to SetStakeToCcyVolume func: %v\n", netParam)
+		return
+	}
+	v.mu.Lock()
+	v.stakeToCcyVolume = netParam.Value
+	v.mu.Unlock()
+}
+
+func (v *VegaStore) GetStakeToCcyVolume() string {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	return v.stakeToCcyVolume
 }
 
 func (b *BinanceStore) Set(bid, ask decimal.Decimal) {

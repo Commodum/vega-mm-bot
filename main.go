@@ -15,30 +15,30 @@ import (
 
 // Note: Below values configured for Fairground
 const (
-	defaultAdminPort           = 8080
-	defaultVegaGrpcAddr        = "api.n00.testnet.vega.rocks:3007"
-	defaultVegaGrpcAddresses   = "api.n00.testnet.vega.rocks:3007,api.n06.testnet.vega.rocks:3007,api.n07.testnet.vega.rocks:3007,api.n08.testnet.vega.rocks:3007,api.n09.testnet.vega.rocks:3007"
-	defaultBinanceWsAddr       = "wss://stream.binance.com:443/ws"
-	defaultWalletServiceAddr   = "http://127.0.0.1:1788" // Note: Fairground wallet running on port 1788
-	defaultWalletPubkey        = ""
-	defaultVegaMarkets         = "69abf5c456c20f4d189cea79a11dfd6b0958ead58ab34bd66f73eea48aee600c"
-	defaultBinanceMarkets      = "BTCUSDT,ETHUSDT,LINKUSDT"
-	defaultLpMarket            = "69abf5c456c20f4d189cea79a11dfd6b0958ead58ab34bd66f73eea48aee600c"
-	defaultLpCommitmentSizeUSD = "5000"
+	defaultAdminPort            = 8080
+	defaultVegaGrpcAddr         = "api.n00.testnet.vega.rocks:3007"
+	defaultVegaGrpcAddresses    = "api.n00.testnet.vega.rocks:3007,api.n06.testnet.vega.rocks:3007,api.n07.testnet.vega.rocks:3007,api.n08.testnet.vega.rocks:3007,api.n09.testnet.vega.rocks:3007"
+	defaultBinanceWsAddr        = "wss://stream.binance.com:443/ws"
+	defaultWalletServiceAddr    = "http://127.0.0.1:1788" // Note: Fairground wallet running on port 1788
+	defaultWalletPubkey         = ""
+	defaultVegaMarkets          = "69abf5c456c20f4d189cea79a11dfd6b0958ead58ab34bd66f73eea48aee600c"
+	defaultBinanceMarkets       = "BTCUSDT,ETHUSDT,LINKUSDT"
+	defaultLpMarket             = "69abf5c456c20f4d189cea79a11dfd6b0958ead58ab34bd66f73eea48aee600c"
+	defaultTargetCommitmentSize = "5000"
 )
 
 var (
-	adminPort           uint
-	vegaGrpcAddr        string
-	vegaGrpcAddresses   string
-	binanceWsAddr       string
-	walletServiceAddr   string
-	walletToken         string
-	walletPubkey        string
-	vegaMarkets         string
-	binanceMarkets      string
-	lpMarket            string
-	lpCommitmentSizeUSD string
+	adminPort            uint
+	vegaGrpcAddr         string
+	vegaGrpcAddresses    string
+	binanceWsAddr        string
+	walletServiceAddr    string
+	walletToken          string
+	walletPubkey         string
+	vegaMarkets          string
+	binanceMarkets       string
+	lpMarket             string
+	targetCommitmentSize string
 )
 
 func init() {
@@ -53,7 +53,7 @@ func init() {
 	flag.StringVar(&vegaMarkets, "vega-markets", defaultVegaMarkets, "a comma separated list of market IDs")
 	flag.StringVar(&binanceMarkets, "binance-markets", defaultBinanceMarkets, "a comma separated list of Binance markets")
 	flag.StringVar(&lpMarket, "lp-market", defaultLpMarket, "The Vega market to submit an LP commitment to")
-	flag.StringVar(&lpCommitmentSizeUSD, "lp-commitment-size", defaultLpCommitmentSizeUSD, "The size of the LP commitment in USD")
+	flag.StringVar(&targetCommitmentSize, "lp-commitment-size", defaultTargetCommitmentSize, "The size of the LP commitment in USD")
 }
 
 func main() {
@@ -79,12 +79,13 @@ func main() {
 	agent := NewAgent(walletClient, config)
 
 	// Load strategyOpts from file.
-	// Note: Don't do this, just use flags...
+	// Note: Don't do this yet, just use flags and hardcoded values...
+	// 		 Later on when we are logging strategy performance to file we can log strategy options too.
 	// stratOpts := loadJsonConfig()
 
 	strategyOpts := &StrategyOpts{
 		marketId:                "69abf5c456c20f4d189cea79a11dfd6b0958ead58ab34bd66f73eea48aee600c",
-		lpCommitmentSizeUSD:     5000,
+		targetCommitmentVolume:  5000,
 		maxProbabilityOfTrading: 0.8,
 		orderSpacing:            0.001,
 		orderSizeBase:           2.0,

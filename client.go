@@ -271,6 +271,37 @@ func (v *VegaClient) loadLiquidityProvisions() {
 	}
 }
 
+func (v *VegaClient) loadStakeToCcVolume() {
+
+	res, err := v.svc.GetNetworkParameter(context.Background(), &apipb.GetNetworkParameterRequest{Key: "market.liquidity.stakeToCcyVolume"})
+	if err != nil {
+		log.Printf("Could not get stakeToCcyVolume net param: %v\n", err)
+		v.handleGrpcReconnect()
+		return
+	}
+
+	netParam := res.GetNetworkParameter()
+
+	for _, marketId := range v.vegaMarkets {
+		v.agent.strategies[marketId].vegaStore.SetStakeToCcyVolume(netParam)
+	}
+
+}
+
+// Func for loading initial network params
+func (v *VegaClient) loadNetworkParams() {
+
+}
+
+// Will this stream just timeout all the time due to infrequent messages?
+// Test it to find out.res, err := v.svc.ListNetworkParameters()
+// Better solution might be to periodically get active governance proposals and check for net param updates.
+func (v *VegaClient) streamNetworkParams() {
+
+	// Stream governance and check for param changes
+
+}
+
 func (v *VegaClient) streamMarketData() {
 
 	for _, marketId := range v.vegaMarkets {

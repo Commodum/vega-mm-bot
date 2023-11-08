@@ -29,7 +29,7 @@ type AgentConfig struct {
 
 type StrategyConfig struct {
 	MarketId                string  `json:"marketId"`
-	LpCommitmentSizeUSD     int64   `json:"lpCommitmentSizeUSD"`
+	TargetCommitmentVolume  int64   `json:"lpCommitmentSizeUSD"`
 	MaxProbabilityOfTrading float64 `json:"maxProbabilityOfTrading"`
 	OrderSpacing            float64 `json:"orderSpacing"`
 	OrderSizeBase           float64 `json:"orderSizeBase"`
@@ -71,7 +71,7 @@ func parseFlags() *Config {
 	if lpMarket = getFlag(lpMarket, os.Getenv("VEGAMM_LP_MARKET")); len(lpMarket) <= 0 {
 		log.Fatal("Error: Missing -lp-market flag")
 	}
-	if lpCommitmentSizeUSD = getFlag(lpCommitmentSizeUSD, os.Getenv("VEGAMM_LP_COMMITMENT_SIZE")); len(lpCommitmentSizeUSD) <= 0 {
+	if targetCommitmentSize = getFlag(targetCommitmentSize, os.Getenv("VEGAMM_LP_COMMITMENT_SIZE")); len(targetCommitmentSize) <= 0 {
 		log.Fatal("Error: Missing -lp-commitment-size flag")
 	}
 
@@ -85,7 +85,7 @@ func parseFlags() *Config {
 		VegaMarkets:         vegaMarkets,
 		BinanceMarkets:      binanceMarkets,
 		LpMarket:            lpMarket,
-		LpCommitmentSizeUSD: lpCommitmentSizeUSD,
+		LpCommitmentSizeUSD: targetCommitmentSize,
 	}
 }
 
@@ -96,7 +96,7 @@ func getFlag(flag, env string) string {
 	return flag
 }
 
-// We want to load our strategies from a JSON file. We also want to update this file with any changes
+// We might want to load our strategies from a JSON file. We also want to update this file with any changes
 // to the strategy that are triggered via the admin API, which we will build later.
 func loadJsonConfig() *StrategyOpts {
 
@@ -126,7 +126,7 @@ func loadJsonConfig() *StrategyOpts {
 
 	return &StrategyOpts{
 		marketId:                strats[0].MarketId,
-		lpCommitmentSizeUSD:     strats[0].LpCommitmentSizeUSD,
+		targetCommitmentVolume:  strats[0].TargetCommitmentVolume,
 		maxProbabilityOfTrading: strats[0].MaxProbabilityOfTrading,
 		orderSpacing:            strats[0].OrderSpacing,
 		orderSizeBase:           strats[0].OrderSizeBase,

@@ -2,7 +2,7 @@
     "strategies": [
         {
             "marketId": "69abf5c456c20f4d189cea79a11dfd6b0958ead58ab34bd66f73eea48aee600c",
-            "lpCommitmentSizeUSD": 1000,
+            "targetCommitmentVolume": 1000,
             "maxProbabilityOfTrading": 0.80,
             "orderSpacing": 0.001,
             "orderSizeBase": 1.99,
