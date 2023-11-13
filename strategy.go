@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"math"
+	"os"
 
 	// "reflect"
 	"strconv"
@@ -29,7 +30,7 @@ type decimals struct {
 
 func RunStrategy(walletClient *wallet.Client, dataClient *DataClient, apiCh chan *ApiState) {
 
-	for range time.NewTicker(1500 * time.Millisecond).C {
+	for range time.NewTicker(1000 * time.Millisecond).C {
 		log.Printf("Executing strategy...")
 
 		var (
@@ -101,6 +102,9 @@ func RunStrategy(walletClient *wallet.Client, dataClient *DataClient, apiCh chan
 				signedExposure := avgEntryPrice.Mul(openVol)
 				balance := getPubkeyBalance(marketId, dataClient.s.v, pubkey, asset.Id, int64(asset.Details.Decimals))
 
+				log.Printf("Open Volume: %v", openVol)
+				log.Printf("Average entry price: %v", avgEntryPrice)
+				log.Printf("Signed Exposure: %v", signedExposure)
 				// Factors for reducing order sizing
 				bidReductionAmount := decimal.Max(signedExposure, decimal.NewFromInt(0))
 				askReductionAmount := decimal.Min(signedExposure, decimal.NewFromInt(0)).Abs()
@@ -108,8 +112,8 @@ func RunStrategy(walletClient *wallet.Client, dataClient *DataClient, apiCh chan
 				// Determine order sizing from position and balance.
 				// bidVol := decimal.Max(balance.Mul(decimal.NewFromFloat(1.2)).Sub(decimal.NewFromFloat(1.5).Mul(decimal.Max(signedExposure, decimal.NewFromFloat(0)))), decimal.NewFromFloat(0))
 				// askVol := decimal.Max(balance.Mul(decimal.NewFromFloat(1.2)).Add(decimal.NewFromFloat(1.5).Mul(decimal.Min(signedExposure, decimal.NewFromFloat(0)))), decimal.NewFromFloat(0))
-				bidVol := balance.Mul(decimal.NewFromFloat(0.9))
-				askVol := balance.Mul(decimal.NewFromFloat(0.9))
+				bidVol := balance.Mul(decimal.NewFromFloat(0.2))
+				askVol := balance.Mul(decimal.NewFromFloat(0.2))
 
 				log.Printf("Balance: %v", balance)
 				log.Printf("Binance best bid: %v, Binance best ask: %v", binanceBestBid, binanceBestAsk)
@@ -127,11 +131,11 @@ func RunStrategy(walletClient *wallet.Client, dataClient *DataClient, apiCh chan
 				switch true {
 				case signedExposure.LessThan(balance.Mul(decimal.NewFromFloat(neutralityThresholds[0])).Mul(decimal.NewFromInt(-1))):
 					// Step back ask
-					askOffset = decimal.NewFromFloat(0.005)
+					askOffset = decimal.NewFromFloat(0.0015)
 					break
 				case signedExposure.GreaterThan(balance.Mul(decimal.NewFromFloat(neutralityThresholds[0]))):
 					// Step back bid
-					bidOffset = decimal.NewFromFloat(0.005)
+					bidOffset = decimal.NewFromFloat(0.0015)
 					break
 				}
 
@@ -258,6 +262,25 @@ func RunStrategy(walletClient *wallet.Client, dataClient *DataClient, apiCh chan
 		// log.Printf("Batch market instructions: %v", batch.String())
 
 	}
+}
+
+func CancelLiquidityCommitment(walletClient *wallet.Client, dataClient *DataClient) {
+
+	err := walletClient.SendTransaction(
+		context.Background(), dataClient.c.WalletPubkey, &walletpb.SubmitTransactionRequest{
+			Command: &walletpb.SubmitTransactionRequest_LiquidityProvisionCancellation{
+				LiquidityProvisionCancellation: &commandspb.LiquidityProvisionCancellation{
+					MarketId: dataClient.c.LpMarket,
+				},
+			},
+		},
+	)
+
+	if err != nil {
+		log.Fatalf("Failed to send transaction: failed to cancel liquidity commitment: %v", err)
+	}
+
+	os.Exit(0)
 }
 
 func AmendLiquidityCommitment(walletClient *wallet.Client, dataClient *DataClient) {
@@ -494,6 +517,7 @@ func getEntryPriceAndVolume(d decimals, market *vegapb.Market, position *vegapb.
 
 	volume = decimal.NewFromInt(position.OpenVolume)
 	entryPrice, _ = decimal.NewFromString(position.AverageEntryPrice)
+	log.Printf("Entry price: %v", entryPrice)
 
 	return volume.Div(d.positionFactor), entryPrice.Div(d.priceFactor)
 }
@@ -524,11 +548,18 @@ func getOrderSubmission(d decimals, ourBestPrice int, vegaSpread, vegaRefPrice, 
 
 	log.Printf("Calculated price: %v, Side: %v \n", firstPrice, side)
 
-	reductionAmount := orderReductionAmount.Div(vegaRefPrice.Div(d.priceFactor))
+	// Override this shit for now because of that disgusting avgEntryPrice bug in core
+	reductionAmount := decimal.NewFromInt(0)
+	// reductionAmount := orderReductionAmount.Div(vegaRefPrice.Div(d.priceFactor))
+
+	// log.Printf("reduciton amount / 1000: %v", reductionAmount.Div(decimal.NewFromFloat(10e4)))
+	// log.Printf("original order reduction amount: %v\n", orderReductionAmount)
+	// log.Printf("original reduction amount: %v\n", reductionAmount)
+	// log.Printf("new reduction amount: %v\n", orderReductionAmount.Div(vegaRefPrice))
 
 	orderSpacing := decimal.NewFromFloat(0.001)
 
-	orderSizeBase := 2.
+	orderSizeBase := 2.0
 
 	numOrders := 10
 	totalOrderSizeUnits := (math.Pow(orderSizeBase, float64(numOrders+1)) - float64(1)) / (orderSizeBase - float64(1))
@@ -539,6 +570,9 @@ func getOrderSubmission(d decimals, ourBestPrice int, vegaSpread, vegaRefPrice, 
 
 		size := targetVolume.Div(decimal.NewFromFloat(totalOrderSizeUnits).Mul(vegaRefPrice.Div(d.priceFactor))).Mul(decimal.NewFromFloat(orderSizeBase).Pow(decimal.NewFromInt(int64(i))))
 		adjustedSize := decimal.NewFromInt(0)
+
+		// log.Printf("Reduction Amount: %v\n", reductionAmount)
+		// log.Printf("size: %v\n", size)
 
 		if size.LessThan(reductionAmount) {
 			reductionAmount = decimal.Max(reductionAmount.Sub(size), decimal.NewFromInt(0))
@@ -595,13 +629,18 @@ func getOrderSubmission(d decimals, ourBestPrice int, vegaSpread, vegaRefPrice, 
 	// 	log.Printf("prob: %v, minPrice: %v, maxPrice: %v\n", x, minPrice, maxPrice)
 	// }
 
-	pseudoLiquidityScore := 0.0
+	sumSize := 0.0
+	sumSizeMulProb := 0.0
 
 	for i := 1; i <= numOrders; i++ {
+
+		price := priceF(i)
+		size := sizeF(i)
+
 		orders = append(orders, &commandspb.OrderSubmission{
 			MarketId:    marketId,
-			Price:       priceF(i).Mul(d.priceFactor).BigInt().String(),
-			Size:        sizeF(i).Mul(d.positionFactor).BigInt().Uint64(),
+			Price:       price.Mul(d.priceFactor).BigInt().String(),
+			Size:        size.Mul(d.positionFactor).BigInt().Uint64(),
 			Side:        side,
 			TimeInForce: vegapb.Order_TIME_IN_FORCE_GTT,
 			ExpiresAt:   int64(time.Now().UnixNano() + 7*1e9),
@@ -609,12 +648,14 @@ func getOrderSubmission(d decimals, ourBestPrice int, vegaSpread, vegaRefPrice, 
 			PostOnly:    true,
 			Reference:   "ref",
 		})
-		prob := getProbabilityOfTradingForOrder(riskParams.Mu, riskParams.Sigma, tau, minPrice, maxPrice, priceF(i).InexactFloat64(), refPrice, side)
-		log.Printf("price: %v, size: %v, probability: %v, size*probability: %v\n", priceF(i).InexactFloat64(), sizeF(i).InexactFloat64(), prob, sizeF(i).InexactFloat64()*prob)
-		pseudoLiquidityScore += (sizeF(i).InexactFloat64() * getProbabilityOfTradingForOrder(riskParams.Mu, riskParams.Sigma, tau, minPrice, maxPrice, priceF(i).InexactFloat64(), refPrice, side))
+		prob := getProbabilityOfTradingForOrder(riskParams.Mu, riskParams.Sigma, tau, minPrice, maxPrice, price.InexactFloat64(), refPrice, side)
+		sumSize += size.InexactFloat64()
+		sumSizeMulProb += size.InexactFloat64() * prob
+		log.Printf("price: %v, size: %v, probability: %v\n", price.InexactFloat64(), size.InexactFloat64(), prob)
 	}
 
-	log.Printf("side: %v, pseudoLiquidityScore: %v\n", side, pseudoLiquidityScore)
+	volumeWeightedLiqScore := sumSizeMulProb / sumSize
+	log.Printf("Side: %v, volume weighted Liquidity Score: %v", side, volumeWeightedLiqScore)
 
 	return orders
 }
@@ -644,15 +685,15 @@ func findPriceByProbabilityOfTrading(probability decimal.Decimal, side vegapb.Si
 
 	for calculatedProb > probability.InexactFloat64() {
 		if side == vegapb.Side_SIDE_BUY {
-			price = price - float64(price*0.00075)
+			price = price - float64(price*0.0005)
 		} else {
-			price = price + float64(price*0.00075)
+			price = price + float64(price*0.0005)
 		}
 		calculatedProb = getProbabilityOfTradingForOrder(riskParams.Mu, riskParams.Sigma, tau, minPrice, maxPrice, price, refPrice, side)
 		log.Printf("Side: %v, Price: %v, Last calculated probability: %v, probability: %v", side, price, calculatedProb, probability)
 	}
 
-	log.Printf("Side: %v, Last calculated probability: %v", side, calculatedProb)
+	log.Printf("Side: %v, Price: %v, Last calculated probability: %v, Specified probability: %v", side, price, calculatedProb, probability)
 
 	return price
 }
