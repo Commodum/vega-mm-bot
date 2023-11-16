@@ -129,6 +129,7 @@ func (vegaClient *VegaClient) StreamVegaData(wg *sync.WaitGroup) {
 	vegaClient.loadPositions()
 	vegaClient.loadAssets()
 	vegaClient.loadLiquidityProvisions()
+	vegaClient.loadStakeToCcyVolume()
 
 	// spew.Dump(d.s.v)
 
@@ -271,7 +272,7 @@ func (v *VegaClient) loadLiquidityProvisions() {
 	}
 }
 
-func (v *VegaClient) loadStakeToCcVolume() {
+func (v *VegaClient) loadStakeToCcyVolume() {
 
 	res, err := v.svc.GetNetworkParameter(context.Background(), &apipb.GetNetworkParameterRequest{Key: "market.liquidity.stakeToCcyVolume"})
 	if err != nil {

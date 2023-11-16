@@ -83,19 +83,31 @@ func main() {
 	// 		 Later on when we are logging strategy performance to file we can log strategy options too.
 	// stratOpts := loadJsonConfig()
 
-	strategyOpts := &StrategyOpts{
-		marketId:                "69abf5c456c20f4d189cea79a11dfd6b0958ead58ab34bd66f73eea48aee600c",
-		targetCommitmentVolume:  5000,
-		maxProbabilityOfTrading: 0.8,
+	btcPerpStrategyOpts := &StrategyOpts{
+		marketId:                "",
+		targetObligationVolume:  5000,
+		maxProbabilityOfTrading: 0.85, // Determines where to place the first order in the distribution
+		orderSpacing:            0.001,
+		orderSizeBase:           2.0,
+		targetVolCoefficient:    1.25, // Aim to quote 1.25x targetObligationVolume on each side
+		numOrdersPerSide:        7,
+	}
+
+	ethPerpStrategyOpts := &StrategyOpts{
+		marketId:                "",
+		targetObligationVolume:  5000,
+		maxProbabilityOfTrading: 0.85,
 		orderSpacing:            0.001,
 		orderSizeBase:           2.0,
 		targetVolCoefficient:    1.25,
-		numOrdersPerSide:        8,
+		numOrdersPerSide:        7,
 	}
 
-	strategy := NewStrategy(strategyOpts, config)
+	btcPerpStrategy := NewStrategy(btcPerpStrategyOpts, config)
+	ethPerpStrategy := NewStrategy(ethPerpStrategyOpts, config)
 
-	agent.RegisterStrategy(strategy)
+	agent.RegisterStrategy(btcPerpStrategy)
+	agent.RegisterStrategy(ethPerpStrategy)
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -107,11 +119,13 @@ func main() {
 
 	agent.LoadDecimals()
 
-	agent.UpdateLiquidityCommitment(strategy)
+	agent.UpdateLiquidityCommitment(btcPerpStrategy)
+	agent.UpdateLiquidityCommitment(ethPerpStrategy)
 
 	metricsCh := make(chan *MetricsState)
 
-	go agent.RunStrategy(strategy, metricsCh)
+	go agent.RunStrategy(btcPerpStrategy, metricsCh)
+	go agent.RunStrategy(ethPerpStrategy, metricsCh)
 
 	go StartMetricsApi(metricsCh)
 

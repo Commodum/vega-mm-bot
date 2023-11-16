@@ -80,7 +80,7 @@ type Agent interface {
 
 type StrategyOpts struct {
 	marketId                string
-	targetCommitmentVolume  int64
+	targetObligationVolume  int64
 	maxProbabilityOfTrading float64
 	orderSpacing            float64
 	orderSizeBase           float64
@@ -91,7 +91,7 @@ type StrategyOpts struct {
 type strategy struct {
 	marketId                string
 	d                       *decimals
-	targetCommitmentVolume  decimal.Decimal
+	targetObligationVolume  decimal.Decimal
 	maxProbabilityOfTrading decimal.Decimal
 	orderSpacing            decimal.Decimal
 	orderSizeBase           decimal.Decimal
@@ -176,14 +176,14 @@ func (agent *agent) UpdateLiquidityCommitment(strat *strategy) {
 
 	// Steps to more accurately check the state of our commitment:
 	// 	- Get liquidityProviderSLA information
-	// 	- Compare required_liquidity to strategyOpts.targetCommitmentVolume
+	// 	- Compare required_liquidity to strategyOpts.targetObligationVolume
 
 	switch true {
-	case (lpCommitment != nil && strat.targetCommitmentVolume.IsZero()):
+	case (lpCommitment != nil && strat.targetObligationVolume.IsZero()):
 		// strat.CancelLiquidityCommitment(walletClient)
-	case (lpCommitment == nil && !strat.targetCommitmentVolume.IsZero()):
+	case (lpCommitment == nil && !strat.targetObligationVolume.IsZero()):
 		strat.SubmitLiquidityCommitment(agent.walletClient)
-	case (lpCommitment != nil && !strat.targetCommitmentVolume.IsZero()):
+	case (lpCommitment != nil && !strat.targetObligationVolume.IsZero()):
 		strat.AmendLiquidityCommitment(agent.walletClient)
 	default:
 		return
@@ -191,6 +191,11 @@ func (agent *agent) UpdateLiquidityCommitment(strat *strategy) {
 }
 
 func (a *agent) RunStrategy(strat *strategy, metricsCh chan *MetricsState) {
+	// Currently, for this setup, the agent has one set of strategy logic and each "strategy" we register
+	// with it is just a different set of parameters for the same strategy logic. This is fine when we just
+	// want to run a simple strategy to earn LP fees on multiple markets but if we want to run more
+	// complex strategies that have distinct logic from one another then we need to refactor this to call
+	// a "Run" method on a strategy interface. Then each strategy can have it's own set of business logic.
 
 	for range time.NewTicker(1500 * time.Millisecond).C {
 		log.Printf("Executing strategy...")
@@ -211,14 +216,16 @@ func (a *agent) RunStrategy(strat *strategy, metricsCh chan *MetricsState) {
 			notionalExposure       = avgEntryPrice.Mul(openVol).Abs()
 			signedExposure         = avgEntryPrice.Mul(openVol)
 			balance                = strat.GetPubkeyBalance(settlementAsset)
-			bidVol                 = balance.Mul(strat.targetVolCoefficient)
-			askVol                 = balance.Mul(strat.targetVolCoefficient)
-			neutralityThresholds   = []float64{0.01, 0.02, 0.03}
-			neutralityOffsets      = []float64{0.003, 0.005, 0.008}
-			bidReductionAmount     = decimal.Max(signedExposure, decimal.NewFromInt(0))
-			askReductionAmount     = decimal.Min(signedExposure, decimal.NewFromInt(0)).Abs()
-			bidOffset              = decimal.NewFromInt(0)
-			askOffset              = decimal.NewFromInt(0)
+			// bidVol                 = balance.Mul(strat.targetVolCoefficient)
+			// askVol                 = balance.Mul(strat.targetVolCoefficient)
+			bidVol               = strat.targetObligationVolume.Mul(strat.targetVolCoefficient)
+			askVol               = strat.targetObligationVolume.Mul(strat.targetVolCoefficient)
+			neutralityThresholds = []float64{0.01, 0.02, 0.03}
+			neutralityOffsets    = []float64{0.003, 0.005, 0.008}
+			bidReductionAmount   = decimal.Max(signedExposure, decimal.NewFromInt(0))
+			askReductionAmount   = decimal.Min(signedExposure, decimal.NewFromInt(0)).Abs()
+			bidOffset            = decimal.NewFromInt(0)
+			askOffset            = decimal.NewFromInt(0)
 			// bidOrderSpacing        = decimal.NewFromFloat(0.001)
 			// askOrderSpacing        = decimal.NewFromFloat(0.001)
 
@@ -265,7 +272,7 @@ func (a *agent) RunStrategy(strat *strategy, metricsCh chan *MetricsState) {
 		//		 of the book.
 		//
 		// 		 We could later on make this a set of orders with a martingale distribution over a tight price
-		//		 very close to the best order. This could make it slower to close out but may give us better
+		//		 range very close to the best order. This could make it slower to close out but may give us better
 		//		 execution, the main risk would then be that the market would move against us. Alternatively
 		//		 we could just push our existing orders on that side to the front of the book by modifying the
 		//		 offset for that side.
@@ -384,7 +391,7 @@ func (s *strategy) GetDecimals(market *vegapb.Market, asset *vegapb.Asset) {
 func NewStrategy(opts *StrategyOpts, config *Config) *strategy {
 	return &strategy{
 		marketId:                opts.marketId,
-		targetCommitmentVolume:  decimal.NewFromInt(opts.targetCommitmentVolume),
+		targetObligationVolume:  decimal.NewFromInt(opts.targetObligationVolume),
 		maxProbabilityOfTrading: decimal.NewFromFloat(opts.maxProbabilityOfTrading),
 		orderSpacing:            decimal.NewFromFloat(opts.orderSpacing),
 		orderSizeBase:           decimal.NewFromFloat(opts.orderSizeBase),
@@ -405,7 +412,7 @@ func (strat *strategy) AmendLiquidityCommitment(walletClient *wallet.Client) {
 		// Create LP Amendment
 		lpAmendment := &commandspb.LiquidityProvisionAmendment{
 			MarketId:         strat.marketId,
-			CommitmentAmount: strat.targetCommitmentVolume.Mul(strat.d.assetFactor).Div(stakeToCcyVolume).BigInt().String(), // Divinde by stakeToCcyVolume
+			CommitmentAmount: strat.targetObligationVolume.Mul(strat.d.assetFactor).Div(stakeToCcyVolume).BigInt().String(), // Divinde by stakeToCcyVolume
 			Fee:              "0.0001",
 			Reference:        "Opportunities don't happen, you create them.",
 		}
@@ -437,7 +444,7 @@ func (strat *strategy) SubmitLiquidityCommitment(walletClient *wallet.Client) {
 		// Create LP submission
 		lpSubmission := &commandspb.LiquidityProvisionSubmission{
 			MarketId:         strat.marketId,
-			CommitmentAmount: strat.targetCommitmentVolume.Mul(strat.d.assetFactor).Div(stakeToCcyVolume).BigInt().String(), // Divide by stakeToCcyVolume to get "commitmentAmount"
+			CommitmentAmount: strat.targetObligationVolume.Mul(strat.d.assetFactor).Div(stakeToCcyVolume).BigInt().String(), // Divide by stakeToCcyVolume to get "commitmentAmount"
 			Fee:              "0.0001",
 			Reference:        "Opportunities don't happen, you create them.",
 		}

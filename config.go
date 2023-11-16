@@ -29,7 +29,7 @@ type AgentConfig struct {
 
 type StrategyConfig struct {
 	MarketId                string  `json:"marketId"`
-	TargetCommitmentVolume  int64   `json:"lpCommitmentSizeUSD"`
+	TargetObligationVolume  int64   `json:"targetObligationVolume"`
 	MaxProbabilityOfTrading float64 `json:"maxProbabilityOfTrading"`
 	OrderSpacing            float64 `json:"orderSpacing"`
 	OrderSizeBase           float64 `json:"orderSizeBase"`
@@ -126,7 +126,7 @@ func loadJsonConfig() *StrategyOpts {
 
 	return &StrategyOpts{
 		marketId:                strats[0].MarketId,
-		targetCommitmentVolume:  strats[0].TargetCommitmentVolume,
+		targetObligationVolume:  strats[0].TargetObligationVolume,
 		maxProbabilityOfTrading: strats[0].MaxProbabilityOfTrading,
 		orderSpacing:            strats[0].OrderSpacing,
 		orderSizeBase:           strats[0].OrderSizeBase,
