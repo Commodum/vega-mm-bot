@@ -132,19 +132,27 @@ func (v *VegaStore) SetOrders(orders []*vegapb.Order) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 
+	var orderCount, deleteCount int
 	for _, ord := range orders {
 		if ord.Status != vegapb.Order_STATUS_ACTIVE {
 			delete(v.orders, ord.Id)
+			deleteCount += 1
 			continue
 		}
 
 		v.orders[ord.Id] = ord
+
+		orderCount += 1
 	}
+
+	// log.Printf(`Finished setting orders. %v orders deleted\n`, deleteCount)
+	// log.Printf(`Finished setting orders. %v orders recieved with "STATUS_ACTIVE"\n`, orderCount)
 }
 
 func (v *VegaStore) GetOrders() []*vegapb.Order {
 	v.mu.RLock()
 	defer v.mu.RUnlock()
+
 	return maps.Values(v.orders)
 }
 

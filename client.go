@@ -149,7 +149,7 @@ func (vegaClient *VegaClient) StreamVegaData(wg *sync.WaitGroup) {
 	vegaClient.loadMarkets()
 	vegaClient.loadMarketData()
 	vegaClient.loadAccounts()
-	vegaClient.loadOrders()
+	// vegaClient.loadOrders()
 	vegaClient.loadPositions()
 	vegaClient.loadAssets()
 	vegaClient.loadLiquidityProvisions()
