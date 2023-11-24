@@ -2,11 +2,15 @@ package main
 
 import (
 	"context"
+	"time"
+
 	// "encoding/json"
 	"fmt"
 	"log"
+
 	// "reflect"
 	// "strings"
+	"sort"
 	"sync"
 
 	// "github.com/davecgh/go-spew/spew"
@@ -16,6 +20,7 @@ import (
 	// "github.com/gorilla/websocket"
 	// "github.com/shopspring/decimal"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	// vegapb "vega-mm/protos/vega"
 )
 
@@ -42,12 +47,23 @@ type VegaClient struct {
 
 func (vegaClient *VegaClient) testGrpcAddresses() {
 
-	successes := []string{}
+	// We need to re-write this to handle the case where all datanodes are down and unreachable.
+	// Alternatively, standardize the clients and reconnect handlers with a new API client implementation.
+
+	type successfulTest struct {
+		addr      string
+		latencyMs int64
+	}
+
+	// successes := []string{}
+	successes := []successfulTest{}
 	failures := []string{}
 
 	for _, addr := range vegaClient.grpcAddresses {
 
-		conn, err := grpc.Dial(addr, grpc.WithInsecure())
+		startTimeMs := time.Now().UnixMilli()
+
+		conn, err := grpc.Dial(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
 			log.Printf("Could not open connection to datanode (%v): %v", addr, err)
 			failures = append(failures, addr)
@@ -64,16 +80,24 @@ func (vegaClient *VegaClient) testGrpcAddresses() {
 			continue
 		}
 
-		successes = append(successes, addr)
+		latency := time.Now().UnixMilli() - startTimeMs
+
+		successes = append(successes, successfulTest{
+			addr:      addr,
+			latencyMs: latency,
+		})
 		conn.Close()
 
 	}
 
-	fmt.Printf("Successes: %v\n", successes)
+	fmt.Printf("Successes: %+v\n", successes)
 	fmt.Printf("Failures: %v\n", failures)
-
-	fmt.Printf("Setting vegaClient grpcAddress to %v\n", successes[0])
-	vegaClient.grpcAddr = successes[0]
+	sort.Slice(successes, func(i, j int) bool {
+		return successes[i].latencyMs < successes[j].latencyMs
+	})
+	fmt.Printf("Lowest latency grpc address was: %v with %vms latency\n", successes[0].addr, successes[0].latencyMs)
+	fmt.Printf("Setting vegaClient grpc address to %v\n", successes[0])
+	vegaClient.grpcAddr = successes[0].addr
 }
 
 func (vegaClient *VegaClient) RunVegaClientReconnectHandler() {

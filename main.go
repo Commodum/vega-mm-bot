@@ -3,14 +3,17 @@ package main
 import (
 	"flag"
 	"fmt"
+
+	// "io"
 	"log"
 	"os"
 	"os/signal"
 	"sync"
 	"syscall"
 	// "time"
-
-	wallet "github.com/jeremyletang/vega-go-sdk/wallet"
+	// wallet "github.com/jeremyletang/vega-go-sdk/wallet"
+	// "net/http"
+	// _ "net/http/pprof"
 )
 
 // Note: Below values configured for Fairground
@@ -25,10 +28,12 @@ const (
 	defaultBinanceMarkets       = "BTCUSDT,ETHUSDT,LINKUSDT"
 	defaultLpMarket             = "69abf5c456c20f4d189cea79a11dfd6b0958ead58ab34bd66f73eea48aee600c"
 	defaultTargetCommitmentSize = "5000"
+	defaultVegaCoreAddrs        = "api.n00.testnet.vega.rocks:3002,api.n06.testnet.vega.rocks:3002,api.n07.testnet.vega.rocks:3002,api.n08.testnet.vega.rocks:3002,api.n09.testnet.vega.rocks:3002"
 )
 
 var (
 	adminPort            uint
+	vegaCoreAddrs        string
 	vegaGrpcAddr         string
 	vegaGrpcAddresses    string
 	binanceWsAddr        string
@@ -44,6 +49,7 @@ var (
 func init() {
 	fmt.Println("Initializing..")
 	flag.UintVar(&adminPort, "admin-port", defaultAdminPort, "The port for the Admin API")
+	flag.StringVar(&vegaCoreAddrs, "vega-core-addresses", defaultVegaCoreAddrs, "Vega core gRPC servers")
 	flag.StringVar(&vegaGrpcAddr, "vega-grpc-addr", defaultVegaGrpcAddr, "A vega grpc server")
 	flag.StringVar(&vegaGrpcAddresses, "vega-grpc-addresses", defaultVegaGrpcAddresses, "Vega grpc servers")
 	flag.StringVar(&binanceWsAddr, "binance-ws-addr", defaultBinanceWsAddr, "A Binance websocket url")
@@ -58,53 +64,54 @@ func init() {
 
 func main() {
 
-	// Things we need to do:
-	// 	a). Connect to wallet
-	//	b). Init data store
-	//	c). Subscribe to external prices
-	//	d). Get current bot state from Vega
-	//	e). Subscribe to vega data
-	//	f). Run strategy
+	// // Profiling for debugging
+	// go func() {
+	// 	http.ListenAndServe("localhost:1111", nil)
+	// }()
 
 	// Get config
 	config := parseFlags()
 
-	// a).
-	walletClient, err := wallet.NewClient(defaultWalletServiceAddr, config.WalletToken)
-	// _, err := wallet.NewClient(defaultWalletServiceAddr, config.WalletToken)
+	// walletClient, err := wallet.NewClient(defaultWalletServiceAddr, config.WalletToken)
+	// // _, err := wallet.NewClient(defaultWalletServiceAddr, config.WalletToken)
+	// if err != nil {
+	// 	log.Fatalf("Could not connect to wallet: %v", err)
+	// }
+
+	// agent := NewAgent(walletClient, config)
+
+	// mnemonic := os.Getenv("FAIRGROUND_MNEMONIC")
+	homePath := os.Getenv("HOME")
+	mnemonic, err := os.ReadFile(fmt.Sprintf("%v/.config/vega-mm-fairground/embedded-wallet/mnemonic.txt", homePath))
 	if err != nil {
-		log.Fatalf("Could not connect to wallet: %v", err)
+		log.Fatalf("Failed to read mnemonic from file: %v", err)
 	}
 
-	agent := NewAgent(walletClient, config)
-
-	// Load strategyOpts from file.
-	// Note: Don't do this yet, just use flags and hardcoded values...
-	// 		 Later on when we are logging strategy performance to file we can log strategy options too.
-	// stratOpts := loadJsonConfig()
+	embeddedWallet := newWallet(string(mnemonic))
+	agent := NewAgent(embeddedWallet, config).(*agent)
 
 	btcPerpStrategyOpts := &StrategyOpts{
-		marketId:                "",
+		marketId:                "61e36f238a2fce9bd75a8dc38a92ac216efa1303c788605b2a00272e0a24a767",
 		targetObligationVolume:  5000,
-		maxProbabilityOfTrading: 0.85, // Determines where to place the first order in the distribution
+		maxProbabilityOfTrading: 0.9, // Determines where to place the first order in the distribution
 		orderSpacing:            0.001,
 		orderSizeBase:           2.0,
 		targetVolCoefficient:    1.25, // Aim to quote 1.25x targetObligationVolume on each side
-		numOrdersPerSide:        7,
+		numOrdersPerSide:        10,
 	}
 
 	ethPerpStrategyOpts := &StrategyOpts{
-		marketId:                "",
+		marketId:                "a79834ef7d9019a60821d4962fc2561663a2558011dc9ed972ab8b01381e8d10",
 		targetObligationVolume:  5000,
-		maxProbabilityOfTrading: 0.85,
+		maxProbabilityOfTrading: 0.9,
 		orderSpacing:            0.001,
 		orderSizeBase:           2.0,
 		targetVolCoefficient:    1.25,
-		numOrdersPerSide:        7,
+		numOrdersPerSide:        10,
 	}
 
-	btcPerpStrategy := NewStrategy(btcPerpStrategyOpts, config)
-	ethPerpStrategy := NewStrategy(ethPerpStrategyOpts, config)
+	btcPerpStrategy := NewStrategy(btcPerpStrategyOpts)
+	ethPerpStrategy := NewStrategy(ethPerpStrategyOpts)
 
 	agent.RegisterStrategy(btcPerpStrategy)
 	agent.RegisterStrategy(ethPerpStrategy)

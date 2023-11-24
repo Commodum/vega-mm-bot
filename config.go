@@ -10,6 +10,7 @@ import (
 )
 
 type Config struct {
+	VegaCoreAddrs       string
 	VegaGrpcAddr        string
 	VegaGrpcAddresses   string
 	BinanceWsAddr       string
@@ -44,6 +45,9 @@ type JsonConfig struct {
 func parseFlags() *Config {
 	flag.Parse()
 
+	if vegaCoreAddrs = getFlag(vegaCoreAddrs, os.Getenv("VEGAMM_VEGA_CORE_ADDRS")); len(vegaCoreAddrs) <= 0 {
+		vegaCoreAddrs = defaultVegaCoreAddrs
+	}
 	if vegaGrpcAddr = getFlag(vegaGrpcAddr, os.Getenv("VEGAMM_VEGA_GRPC_ADDR")); len(vegaGrpcAddr) <= 0 {
 		vegaGrpcAddr = defaultVegaGrpcAddr
 	}
@@ -76,6 +80,7 @@ func parseFlags() *Config {
 	}
 
 	return &Config{
+		VegaCoreAddrs:       vegaCoreAddrs,
 		VegaGrpcAddr:        vegaGrpcAddr,
 		VegaGrpcAddresses:   vegaGrpcAddresses,
 		BinanceWsAddr:       binanceWsAddr,

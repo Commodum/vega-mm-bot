@@ -1,7 +1,7 @@
 package main
 
 import (
-	"context"
+	// "context"
 	// "sync"
 	// "encoding/json"
 	"log"
@@ -17,8 +17,8 @@ import (
 	"code.vegaprotocol.io/quant/riskmodelbs"
 	vegapb "code.vegaprotocol.io/vega/protos/vega"
 	commandspb "code.vegaprotocol.io/vega/protos/vega/commands/v1"
-	walletpb "code.vegaprotocol.io/vega/protos/vega/wallet/v1"
-	"github.com/jeremyletang/vega-go-sdk/wallet"
+	// walletpb "code.vegaprotocol.io/vega/protos/vega/wallet/v1"
+	// "github.com/jeremyletang/vega-go-sdk/wallet"
 	"github.com/shopspring/decimal"
 	// vegapb "vega-mm/protos/vega"
 	// commandspb "vega-mm/protos/vega/commands/v1"
@@ -51,14 +51,15 @@ import (
 type agent struct {
 	// An agent will control one wallet and can run multiple strategies
 	// Note: For the time being an agent will only allow one strategy per market.
-	pubkey       string
-	apiToken     string
-	balance      decimal.Decimal
-	strategies   map[string]*strategy
-	vegaClient   *VegaClient
-	walletClient *wallet.Client
-	config       *Config
-	metricsCh    chan *MetricsState
+	pubkey     string
+	apiToken   string
+	balance    decimal.Decimal
+	strategies map[string]*strategy
+	vegaClient *VegaClient
+	// walletClient *wallet.Client
+	signer    *signer
+	config    *Config
+	metricsCh chan *MetricsState
 }
 
 type Agent interface {
@@ -119,13 +120,13 @@ type StrategyMetrics struct {
 type Strategy interface {
 	GetDecimals(*vegapb.Market, *vegapb.Asset) decimals
 
-	SubmitLiquidityCommitment(*wallet.Client)
+	SubmitLiquidityCommitment()
 
-	AmendLiquidityCommitment(*wallet.Client)
+	AmendLiquidityCommitment()
 
 	GetOurBestBidAndAsk([]*vegapb.Order) (decimal.Decimal, decimal.Decimal)
 
-	GetOrderSubmission(decimal.Decimal, decimal.Decimal, decimal.Decimal, decimal.Decimal, vegapb.Side, *vegapb.LogNormalRiskModel) []*commandspb.OrderSubmission
+	GetOrderSubmission(decimal.Decimal, decimal.Decimal, decimal.Decimal, decimal.Decimal, vegapb.Side, *vegapb.LogNormalRiskModel, *vegapb.LiquiditySLAParameters) []*commandspb.OrderSubmission
 
 	// GetRiskMetricsForMarket(*vegapb.Market) (something... something... something...)
 
@@ -182,12 +183,23 @@ func (agent *agent) UpdateLiquidityCommitment(strat *strategy) {
 	case (lpCommitment != nil && strat.targetObligationVolume.IsZero()):
 		// strat.CancelLiquidityCommitment(walletClient)
 	case (lpCommitment == nil && !strat.targetObligationVolume.IsZero()):
-		strat.SubmitLiquidityCommitment(agent.walletClient)
+		strat.SubmitLiquidityCommitment()
 	case (lpCommitment != nil && !strat.targetObligationVolume.IsZero()):
-		strat.AmendLiquidityCommitment(agent.walletClient)
+		strat.AmendLiquidityCommitment()
 	default:
 		return
 	}
+
+	// switch true {
+	// case (lpCommitment != nil && strat.targetObligationVolume.IsZero()):
+	// 	// strat.CancelLiquidityCommitment(walletClient)
+	// case (lpCommitment == nil && !strat.targetObligationVolume.IsZero()):
+	// 	strat.SubmitLiquidityCommitment(agent.walletClient)
+	// case (lpCommitment != nil && !strat.targetObligationVolume.IsZero()):
+	// 	strat.AmendLiquidityCommitment(agent.walletClient)
+	// default:
+	// 	return
+	// }
 }
 
 func (a *agent) RunStrategy(strat *strategy, metricsCh chan *MetricsState) {
@@ -197,7 +209,7 @@ func (a *agent) RunStrategy(strat *strategy, metricsCh chan *MetricsState) {
 	// complex strategies that have distinct logic from one another then we need to refactor this to call
 	// a "Run" method on a strategy interface. Then each strategy can have it's own set of business logic.
 
-	for range time.NewTicker(1500 * time.Millisecond).C {
+	for range time.NewTicker(1000 * time.Millisecond).C {
 		log.Printf("Executing strategy...")
 
 		var (
@@ -205,6 +217,7 @@ func (a *agent) RunStrategy(strat *strategy, metricsCh chan *MetricsState) {
 			market          = strat.vegaStore.GetMarket()
 			settlementAsset = market.GetTradableInstrument().GetInstrument().GetPerpetual().GetSettlementAsset()
 
+			liquidityParams        = market.GetLiquiditySlaParams()
 			logNormalRiskModel     = market.GetTradableInstrument().GetLogNormalRiskModel()
 			liveOrders             = strat.vegaStore.GetOrders()
 			vegaBestBid            = decimal.RequireFromString(strat.vegaStore.GetMarketData().GetBestBidPrice())
@@ -221,7 +234,7 @@ func (a *agent) RunStrategy(strat *strategy, metricsCh chan *MetricsState) {
 			bidVol               = strat.targetObligationVolume.Mul(strat.targetVolCoefficient)
 			askVol               = strat.targetObligationVolume.Mul(strat.targetVolCoefficient)
 			neutralityThresholds = []float64{0.01, 0.02, 0.03}
-			neutralityOffsets    = []float64{0.003, 0.005, 0.008}
+			neutralityOffsets    = []float64{0.001, 0.003, 0.005}
 			bidReductionAmount   = decimal.Max(signedExposure, decimal.NewFromInt(0))
 			askReductionAmount   = decimal.Min(signedExposure, decimal.NewFromInt(0)).Abs()
 			bidOffset            = decimal.NewFromInt(0)
@@ -301,7 +314,7 @@ func (a *agent) RunStrategy(strat *strategy, metricsCh chan *MetricsState) {
 				Size:        openVol.Mul(strat.d.positionFactor).Abs().BigInt().Uint64(),
 				Side:        side,
 				TimeInForce: vegapb.Order_TIME_IN_FORCE_GTT,
-				ExpiresAt:   int64(time.Now().UnixNano() + 5*1e9),
+				ExpiresAt:   int64(time.Now().UnixNano() + 8*1e9),
 				Type:        vegapb.Order_TYPE_LIMIT,
 				PostOnly:    true,
 				Reference:   "ref",
@@ -314,8 +327,8 @@ func (a *agent) RunStrategy(strat *strategy, metricsCh chan *MetricsState) {
 		submissions = append(
 			submissions,
 			append(
-				strat.GetOrderSubmission(vegaBestBid, bidOffset, bidVol, bidReductionAmount, vegapb.Side_SIDE_BUY, logNormalRiskModel),
-				strat.GetOrderSubmission(vegaBestAsk, askOffset, askVol, askReductionAmount, vegapb.Side_SIDE_SELL, logNormalRiskModel)...,
+				strat.GetOrderSubmission(vegaBestBid, bidOffset, bidVol, bidReductionAmount, vegapb.Side_SIDE_BUY, logNormalRiskModel, liquidityParams),
+				strat.GetOrderSubmission(vegaBestAsk, askOffset, askVol, askReductionAmount, vegapb.Side_SIDE_SELL, logNormalRiskModel, liquidityParams)...,
 			)...,
 		)
 
@@ -338,18 +351,35 @@ func (a *agent) RunStrategy(strat *strategy, metricsCh chan *MetricsState) {
 			Submissions:   submissions,
 		}
 
-		// Send transaction
-		err := strat.agent.walletClient.SendTransaction(
-			context.Background(), strat.agent.pubkey, &walletpb.SubmitTransactionRequest{
-				Command: &walletpb.SubmitTransactionRequest_BatchMarketInstructions{
-					BatchMarketInstructions: &batch,
-				},
+		// Build and send tx
+		inputData := &commandspb.InputData{
+			Command: &commandspb.InputData_BatchMarketInstructions{
+				BatchMarketInstructions: &batch,
 			},
-		)
-
-		if err != nil {
-			log.Printf("Error subitting the batch: %v", err)
 		}
+
+		// log.Printf("Input Data: %v", inputData)
+		// log.Printf("Batch market instructions: %v", inputData.Command.(*commandspb.InputData_BatchMarketInstructions).BatchMarketInstructions)
+		// log.Printf("Submissions: %v", inputData.Command.(*commandspb.InputData_BatchMarketInstructions).BatchMarketInstructions.Submissions)
+
+		tx := a.signer.BuildTx(a.pubkey, inputData)
+
+		res := a.signer.SubmitTx(tx)
+
+		log.Printf("Response: %v", res)
+
+		// // Send transaction
+		// err := strat.agent.walletClient.SendTransaction(
+		// 	context.Background(), strat.agent.pubkey, &walletpb.SubmitTransactionRequest{
+		// 		Command: &walletpb.SubmitTransactionRequest_BatchMarketInstructions{
+		// 			BatchMarketInstructions: &batch,
+		// 		},
+		// 	},
+		// )
+
+		// if err != nil {
+		// 	log.Printf("Error subitting the batch: %v", err)
+		// }
 
 	}
 
@@ -360,7 +390,8 @@ func (a *agent) StartMetrics() chan *MetricsState {
 	return make(chan *MetricsState)
 }
 
-func NewAgent(walletClient *wallet.Client, config *Config) Agent {
+// func NewAgent(walletClient *wallet.Client, config *Config) Agent {
+func NewAgent(wallet *embeddedWallet, config *Config) Agent {
 	agent := &agent{
 		pubkey:     config.WalletPubkey,
 		apiToken:   config.WalletToken,
@@ -372,11 +403,12 @@ func NewAgent(walletClient *wallet.Client, config *Config) Agent {
 			reconnChan:    make(chan struct{}),
 			reconnecting:  false,
 		},
-		walletClient: walletClient,
-		config:       config,
-		metricsCh:    make(chan *MetricsState),
+		// walletClient: walletClient,
+		config:    config,
+		metricsCh: make(chan *MetricsState),
 	}
 	agent.vegaClient.agent = agent
+	agent.signer = newSigner(wallet, strings.Split(config.VegaCoreAddrs, ","), agent).(*signer)
 	return agent
 }
 
@@ -388,7 +420,8 @@ func (s *strategy) GetDecimals(market *vegapb.Market, asset *vegapb.Asset) {
 	}
 }
 
-func NewStrategy(opts *StrategyOpts, config *Config) *strategy {
+// func NewStrategy(opts *StrategyOpts, config *Config) *strategy {
+func NewStrategy(opts *StrategyOpts) *strategy {
 	return &strategy{
 		marketId:                opts.marketId,
 		targetObligationVolume:  decimal.NewFromInt(opts.targetObligationVolume),
@@ -401,7 +434,8 @@ func NewStrategy(opts *StrategyOpts, config *Config) *strategy {
 	}
 }
 
-func (strat *strategy) AmendLiquidityCommitment(walletClient *wallet.Client) {
+// func (strat *strategy) AmendLiquidityCommitment(walletClient *wallet.Client) {
+func (strat *strategy) AmendLiquidityCommitment() {
 	if market := strat.vegaStore.GetMarket(); market != nil {
 
 		stakeToCcyVolume, err := decimal.NewFromString(strat.vegaStore.GetStakeToCcyVolume())
@@ -417,22 +451,35 @@ func (strat *strategy) AmendLiquidityCommitment(walletClient *wallet.Client) {
 			Reference:        "Opportunities don't happen, you create them.",
 		}
 
-		// Submit transaction
-		err = walletClient.SendTransaction(
-			context.Background(), strat.agent.pubkey, &walletpb.SubmitTransactionRequest{
-				Command: &walletpb.SubmitTransactionRequest_LiquidityProvisionAmendment{
-					LiquidityProvisionAmendment: lpAmendment,
-				},
+		// Build and send tx
+		inputData := &commandspb.InputData{
+			Command: &commandspb.InputData_LiquidityProvisionAmendment{
+				LiquidityProvisionAmendment: lpAmendment,
 			},
-		)
-
-		if err != nil {
-			log.Fatalf("Failed to send transaction: failed to amend liquidity commitment: %v", err)
 		}
+		tx := strat.agent.signer.BuildTx(strat.agent.pubkey, inputData)
+
+		res := strat.agent.signer.SubmitTx(tx)
+
+		log.Printf("Response: %v", res)
+
+		// // Submit transaction
+		// err = walletClient.SendTransaction(
+		// 	context.Background(), strat.agent.pubkey, &walletpb.SubmitTransactionRequest{
+		// 		Command: &walletpb.SubmitTransactionRequest_LiquidityProvisionAmendment{
+		// 			LiquidityProvisionAmendment: lpAmendment,
+		// 		},
+		// 	},
+		// )
+
+		// if err != nil {
+		// 	log.Fatalf("Failed to send transaction: failed to amend liquidity commitment: %v", err)
+		// }
 	}
 }
 
-func (strat *strategy) SubmitLiquidityCommitment(walletClient *wallet.Client) {
+// func (strat *strategy) SubmitLiquidityCommitment(walletClient *wallet.Client) {
+func (strat *strategy) SubmitLiquidityCommitment() {
 
 	if market := strat.vegaStore.GetMarket(); market != nil {
 
@@ -449,18 +496,30 @@ func (strat *strategy) SubmitLiquidityCommitment(walletClient *wallet.Client) {
 			Reference:        "Opportunities don't happen, you create them.",
 		}
 
-		// Submit transaction
-		err = walletClient.SendTransaction(
-			context.Background(), strat.agent.pubkey, &walletpb.SubmitTransactionRequest{
-				Command: &walletpb.SubmitTransactionRequest_LiquidityProvisionSubmission{
-					LiquidityProvisionSubmission: lpSubmission,
-				},
+		// Build and send tx
+		inputData := &commandspb.InputData{
+			Command: &commandspb.InputData_LiquidityProvisionSubmission{
+				LiquidityProvisionSubmission: lpSubmission,
 			},
-		)
-
-		if err != nil {
-			log.Fatalf("Failed to send transaction: failed to submit liquidity commitment: %v", err)
 		}
+		tx := strat.agent.signer.BuildTx(strat.agent.pubkey, inputData)
+
+		res := strat.agent.signer.SubmitTx(tx)
+
+		log.Printf("Response: %v", res)
+
+		// // Submit transaction
+		// err = walletClient.SendTransaction(
+		// 	context.Background(), strat.agent.pubkey, &walletpb.SubmitTransactionRequest{
+		// 		Command: &walletpb.SubmitTransactionRequest_LiquidityProvisionSubmission{
+		// 			LiquidityProvisionSubmission: lpSubmission,
+		// 		},
+		// 	},
+		// )
+
+		// if err != nil {
+		// 	log.Fatalf("Failed to send transaction: failed to submit liquidity commitment: %v", err)
+		// }
 	}
 }
 
@@ -516,7 +575,7 @@ func (strat *strategy) GetPubkeyBalance(settlementAsset string) (b decimal.Decim
 	return b.Div(strat.d.assetFactor)
 }
 
-func (strat *strategy) GetOrderSubmission(vegaRefPrice, offset, targetVolume, orderReductionAmount decimal.Decimal, side vegapb.Side, logNormalRiskModel *vegapb.LogNormalRiskModel) []*commandspb.OrderSubmission {
+func (strat *strategy) GetOrderSubmission(vegaRefPrice, offset, targetVolume, orderReductionAmount decimal.Decimal, side vegapb.Side, logNormalRiskModel *vegapb.LogNormalRiskModel, liquidityParams *vegapb.LiquiditySLAParameters) []*commandspb.OrderSubmission {
 
 	refPrice, _ := vegaRefPrice.Div(strat.d.priceFactor).Float64()
 	firstPrice := findPriceByProbabilityOfTrading(strat.maxProbabilityOfTrading, side, refPrice, logNormalRiskModel)
@@ -553,9 +612,11 @@ func (strat *strategy) GetOrderSubmission(vegaRefPrice, offset, targetVolume, or
 	// 	return decimal.Max(targetVolume.Div(decimal.NewFromInt(int64(numOrders)).Mul(vegaRefPrice.Div(d.priceFactor))), decimal.NewFromInt(1).Div(d.positionFactor))
 	// }
 
-	log.Printf("targetVol; %v, vegaRefPrice: %v", targetVolume, vegaRefPrice)
+	log.Printf("targetVol: %v, vegaRefPrice: %v", targetVolume, vegaRefPrice)
 
 	priceF := func(i int) decimal.Decimal {
+
+		// We need to add a clamp so that the min/max price we quote will always be within the valid LP price range.
 
 		// if i == 1 && offset.IsZero() {
 		// 	return decimal.NewFromFloat(firstPrice)
@@ -583,7 +644,7 @@ func (strat *strategy) GetOrderSubmission(vegaRefPrice, offset, targetVolume, or
 			Size:        sizeF(i).Mul(strat.d.positionFactor).BigInt().Uint64(),
 			Side:        side,
 			TimeInForce: vegapb.Order_TIME_IN_FORCE_GTT,
-			ExpiresAt:   int64(time.Now().UnixNano() + 5*1e9),
+			ExpiresAt:   int64(time.Now().UnixNano() + 8*1e9),
 			Type:        vegapb.Order_TYPE_LIMIT,
 			PostOnly:    true,
 			Reference:   "ref",
@@ -596,6 +657,7 @@ func (strat *strategy) GetOrderSubmission(vegaRefPrice, offset, targetVolume, or
 func findPriceByProbabilityOfTrading(probability decimal.Decimal, side vegapb.Side, refPrice float64, logNormalRiskModel *vegapb.LogNormalRiskModel) (price float64) {
 
 	tau := logNormalRiskModel.GetTau()
+	tauScaled := logNormalRiskModel.GetTau() * 10
 	riskParams := logNormalRiskModel.GetParams()
 	log.Printf("desiredMaxProbability: %v, refPrice: %v, tau: %v", probability, refPrice, tau)
 
@@ -605,7 +667,7 @@ func findPriceByProbabilityOfTrading(probability decimal.Decimal, side vegapb.Si
 		Sigma: riskParams.Sigma,
 	}
 	// Get analytical distribution
-	dist := modelParams.GetProbabilityDistribution(refPrice, tau)
+	dist := modelParams.GetProbabilityDistribution(refPrice, tauScaled)
 
 	// Get price range from distribution
 	minPrice, maxPrice := pd.PriceRange(dist, 0.9999)
