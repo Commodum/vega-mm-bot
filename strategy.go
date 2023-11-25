@@ -131,7 +131,7 @@ type Strategy interface {
 	Run()
 }
 
-type Strategy interface {
+type StrategyOld interface {
 	SubmitLiquidityCommitment()
 
 	AmendLiquidityCommitment()
