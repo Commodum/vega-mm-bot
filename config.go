@@ -61,7 +61,8 @@ func parseFlags() *Config {
 		walletServiceAddr = defaultWalletServiceAddr
 	}
 	if walletToken = getFlag(walletToken, os.Getenv("VEGAMM_WALLET_TOKEN")); len(walletToken) <= 0 {
-		log.Fatal("Error: Missing -wallet-token flag")
+		walletToken = ""
+		// log.Fatal("Error: Missing -wallet-token flag")
 	}
 	if walletPubkey = getFlag(walletPubkey, os.Getenv("VEGAMM_WALLET_PUBKEY")); len(walletPubkey) <= 0 {
 		log.Fatal("Error: Missing -wallet-pubkey flag")

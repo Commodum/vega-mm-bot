@@ -118,8 +118,20 @@ type StrategyMetrics struct {
 }
 
 type Strategy interface {
-	GetDecimals(*vegapb.Market, *vegapb.Asset) decimals
+	GetMarketId()
 
+	SetAgent()
+
+	GetAgent()
+
+	GetInstrument() *vegapb.Instrument
+
+	HasLiquidityCommitment() bool
+
+	Run()
+}
+
+type Strategy interface {
 	SubmitLiquidityCommitment()
 
 	AmendLiquidityCommitment()
@@ -412,15 +424,7 @@ func NewAgent(wallet *embeddedWallet, config *Config) Agent {
 	return agent
 }
 
-func (s *strategy) GetDecimals(market *vegapb.Market, asset *vegapb.Asset) {
-	s.d = &decimals{
-		positionFactor: decimal.NewFromInt(10).Pow(decimal.NewFromInt(market.PositionDecimalPlaces)),
-		priceFactor:    decimal.NewFromInt(10).Pow(decimal.NewFromInt(int64(market.DecimalPlaces))),
-		assetFactor:    decimal.NewFromInt(10).Pow(decimal.NewFromInt(int64(asset.Details.Decimals))),
-	}
-}
-
-// func NewStrategy(opts *StrategyOpts, config *Config) *strategy {
+// Make this into NewLiquidityProviderStrategy()
 func NewStrategy(opts *StrategyOpts) *strategy {
 	return &strategy{
 		marketId:                opts.marketId,
