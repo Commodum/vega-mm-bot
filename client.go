@@ -134,7 +134,7 @@ func (vegaClient *VegaClient) StreamVegaData(wg *sync.WaitGroup) {
 	// Test all available addresses
 	vegaClient.testGrpcAddresses()
 
-	conn, err := grpc.Dial(vegaClient.grpcAddr, grpc.WithInsecure())
+	conn, err := grpc.Dial(vegaClient.grpcAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Printf("Could not open connection to datanode: %v\n", err)
 		vegaClient.handleGrpcReconnect()

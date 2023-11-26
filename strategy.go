@@ -17,6 +17,7 @@ import (
 	"code.vegaprotocol.io/quant/riskmodelbs"
 	vegapb "code.vegaprotocol.io/vega/protos/vega"
 	commandspb "code.vegaprotocol.io/vega/protos/vega/commands/v1"
+
 	// walletpb "code.vegaprotocol.io/vega/protos/vega/wallet/v1"
 	// "github.com/jeremyletang/vega-go-sdk/wallet"
 	"github.com/shopspring/decimal"
@@ -181,7 +182,7 @@ func (agent *agent) UpdateLiquidityCommitment(strat *strategy) {
 
 	switch true {
 	case (lpCommitment != nil && strat.targetObligationVolume.IsZero()):
-		// strat.CancelLiquidityCommitment(walletClient)
+		strat.CancelLiquidityCommitment()
 	case (lpCommitment == nil && !strat.targetObligationVolume.IsZero()):
 		strat.SubmitLiquidityCommitment()
 	case (lpCommitment != nil && !strat.targetObligationVolume.IsZero()):
@@ -394,10 +395,8 @@ func (a *agent) StartMetrics() chan *MetricsState {
 func NewAgent(wallet *embeddedWallet, config *Config) Agent {
 	agent := &agent{
 		pubkey:     config.WalletPubkey,
-		apiToken:   config.WalletToken,
 		strategies: map[string]*strategy{},
 		vegaClient: &VegaClient{
-			grpcAddr:      config.VegaGrpcAddr,
 			grpcAddresses: strings.Split(config.VegaGrpcAddresses, ","),
 			vegaMarkets:   []string{}, // strings.Split(config.VegaMarkets, ","),
 			reconnChan:    make(chan struct{}),
@@ -476,6 +475,32 @@ func (strat *strategy) AmendLiquidityCommitment() {
 		// 	log.Fatalf("Failed to send transaction: failed to amend liquidity commitment: %v", err)
 		// }
 	}
+}
+
+func (strat *strategy) CancelLiquidityCommitment() {
+
+	if market := strat.vegaStore.GetMarket(); market != nil {
+
+		// Cancel LP submission
+		lpCancellation := &commandspb.LiquidityProvisionCancellation{
+			MarketId: strat.marketId,
+		}
+
+		// Build and send tx
+		inputData := &commandspb.InputData{
+			Command: &commandspb.InputData_LiquidityProvisionCancellation{
+				LiquidityProvisionCancellation: lpCancellation,
+			},
+		}
+
+		tx := strat.agent.signer.BuildTx(strat.agent.pubkey, inputData)
+
+		res := strat.agent.signer.SubmitTx(tx)
+
+		log.Printf("Response: %v", res)
+
+	}
+
 }
 
 // func (strat *strategy) SubmitLiquidityCommitment(walletClient *wallet.Client) {
@@ -578,9 +603,12 @@ func (strat *strategy) GetPubkeyBalance(settlementAsset string) (b decimal.Decim
 func (strat *strategy) GetOrderSubmission(vegaRefPrice, offset, targetVolume, orderReductionAmount decimal.Decimal, side vegapb.Side, logNormalRiskModel *vegapb.LogNormalRiskModel, liquidityParams *vegapb.LiquiditySLAParameters) []*commandspb.OrderSubmission {
 
 	refPrice, _ := vegaRefPrice.Div(strat.d.priceFactor).Float64()
-	firstPrice := findPriceByProbabilityOfTrading(strat.maxProbabilityOfTrading, side, refPrice, logNormalRiskModel)
+	priceTriggers := strat.vegaStore.GetMarket().GetPriceMonitoringSettings().GetParameters().GetTriggers()
+	firstPrice := findPriceByProbabilityOfTrading(strat.maxProbabilityOfTrading, side, refPrice, logNormalRiskModel, priceTriggers)
 
 	log.Printf("Calculated price: %v, Side: %v \n", firstPrice, side)
+
+	riskParams := logNormalRiskModel.GetParams()
 
 	reductionAmount := orderReductionAmount.Div(vegaRefPrice.Div(strat.d.priceFactor))
 
@@ -636,12 +664,30 @@ func (strat *strategy) GetOrderSubmission(vegaRefPrice, offset, targetVolume, or
 
 	}
 
-	// for i := 1; i <= strat.numOrdersPerSide; i++ {
+	tau := logNormalRiskModel.GetTau()
+	tauScaled := tau * 10
+	modelParams := riskmodelbs.ModelParamsBS{
+		Mu:    riskParams.Mu,
+		R:     riskParams.R,
+		Sigma: riskParams.Sigma,
+	}
+	distS := modelParams.GetProbabilityDistribution(refPrice, tauScaled)
+
+	// bestAsk := decimal.RequireFromString(strat.vegaStore.GetMarketData().GetBestOfferPrice()).Div(strat.d.priceFactor)
+	// maxAsk := bestAsk.InexactFloat64() * 6.0
+
+	sumSize := 0.0
+	sumSizeMulProb := 0.0
+
 	for i := 0; i < strat.numOrdersPerSide; i++ {
+
+		price := priceF(i)
+		size := sizeF(i)
+
 		orders = append(orders, &commandspb.OrderSubmission{
 			MarketId:    strat.marketId,
-			Price:       priceF(i).Mul(strat.d.priceFactor).BigInt().String(),
-			Size:        sizeF(i).Mul(strat.d.positionFactor).BigInt().Uint64(),
+			Price:       price.Mul(strat.d.priceFactor).BigInt().String(),
+			Size:        size.Mul(strat.d.positionFactor).BigInt().Uint64(),
 			Side:        side,
 			TimeInForce: vegapb.Order_TIME_IN_FORCE_GTT,
 			ExpiresAt:   int64(time.Now().UnixNano() + 8*1e9),
@@ -649,43 +695,110 @@ func (strat *strategy) GetOrderSubmission(vegaRefPrice, offset, targetVolume, or
 			PostOnly:    true,
 			Reference:   "ref",
 		})
+
+		var isBid bool
+		var prob float64
+		if side == vegapb.Side_SIDE_BUY {
+			isBid = true
+			prob = pd.ProbabilityOfTrading(distS, price.InexactFloat64(), isBid, true, 0.0, refPrice)
+		} else {
+			isBid = false
+			prob = pd.ProbabilityOfTrading(distS, price.InexactFloat64(), isBid, true, refPrice, refPrice*6)
+		}
+
+		sumSize += size.InexactFloat64()
+		sumSizeMulProb += size.InexactFloat64() * prob
+		log.Printf("price: %v, size: %v, probability: %v\n", price.InexactFloat64(), size.InexactFloat64(), prob)
 	}
+
+	volumeWeightedLiqScore := sumSizeMulProb / sumSize
+	log.Printf("Side: %v, volume weighted Liquidity Score: %v", side, volumeWeightedLiqScore)
+
+	// // for i := 1; i <= strat.numOrdersPerSide; i++ {
+	// for i := 0; i < strat.numOrdersPerSide; i++ {
+	// 	orders = append(orders, &commandspb.OrderSubmission{
+	// 		MarketId:    strat.marketId,
+	// 		Price:       priceF(i).Mul(strat.d.priceFactor).BigInt().String(),
+	// 		Size:        sizeF(i).Mul(strat.d.positionFactor).BigInt().Uint64(),
+	// 		Side:        side,
+	// 		TimeInForce: vegapb.Order_TIME_IN_FORCE_GTT,
+	// 		ExpiresAt:   int64(time.Now().UnixNano() + 8*1e9),
+	// 		Type:        vegapb.Order_TYPE_LIMIT,
+	// 		PostOnly:    true,
+	// 		Reference:   "ref",
+	// 	})
+	// }
 
 	return orders
 }
 
-func findPriceByProbabilityOfTrading(probability decimal.Decimal, side vegapb.Side, refPrice float64, logNormalRiskModel *vegapb.LogNormalRiskModel) (price float64) {
+func findPriceByProbabilityOfTrading(probability decimal.Decimal, side vegapb.Side, refPrice float64, logNormalRiskModel *vegapb.LogNormalRiskModel, priceTriggers []*vegapb.PriceMonitoringTrigger) (price float64) {
 
 	tau := logNormalRiskModel.GetTau()
-	tauScaled := logNormalRiskModel.GetTau() * 10
+	tauScaled := tau * 10
 	riskParams := logNormalRiskModel.GetParams()
-	log.Printf("desiredMaxProbability: %v, refPrice: %v, tau: %v", probability, refPrice, tau)
-
 	modelParams := riskmodelbs.ModelParamsBS{
 		Mu:    riskParams.Mu,
 		R:     riskParams.R,
 		Sigma: riskParams.Sigma,
 	}
-	// Get analytical distribution
-	dist := modelParams.GetProbabilityDistribution(refPrice, tauScaled)
+	distS := modelParams.GetProbabilityDistribution(refPrice, tauScaled)
+
+	log.Printf("desiredMaxProbability: %v, refPrice: %v, tauScaled: %v", probability, refPrice, tauScaled)
 
 	// Get price range from distribution
-	minPrice, maxPrice := pd.PriceRange(dist, 0.9999)
+	var minPrice float64
+	var maxPrice = math.MaxFloat64
+	for _, trigger := range priceTriggers {
+
+		yFrac := float64(trigger.Horizon) / float64(31536000)
+
+		// Get analytical distribution
+		dist := modelParams.GetProbabilityDistribution(refPrice, yFrac)
+
+		minP, maxP := pd.PriceRange(dist, decimal.RequireFromString(trigger.Probability).InexactFloat64())
+
+		if minP > minPrice {
+			minPrice = minP
+		}
+		if maxP < maxPrice {
+			maxPrice = maxP
+		}
+
+	}
+
 	log.Printf("minPrice: %v, maxPrice: %v", minPrice, maxPrice)
+	log.Printf("downFactor: %v upFactor: %v", minPrice/refPrice, maxPrice/refPrice)
+	// log.Printf("minPrice1: %v, maxPrice1: %v", minPrice1, maxPrice1)
+	// log.Printf("minPrice2: %v, maxPrice2: %v", minPrice2, maxPrice2)
 
 	price = refPrice
 	calculatedProb := float64(1)
 	// Iterate through prices until we find a price that corresponds to our desired probability.
 	for calculatedProb > probability.InexactFloat64() {
 		if side == vegapb.Side_SIDE_BUY {
-			price = price - float64(price*0.0002)
+			// price = price - float64(price*0.0002)
+			price = price - (refPrice * 0.001)
 		} else {
-			price = price + float64(price*0.0002)
+			// price = price + float64(price*0.0002)
+			price = price + (refPrice * 0.001)
 		}
-		calculatedProb = getProbabilityOfTradingForOrder(riskParams.Mu, riskParams.Sigma, tau, minPrice, maxPrice, price, refPrice, side)
+
+		var isBid bool
+		if side == vegapb.Side_SIDE_BUY {
+			isBid = true
+			calculatedProb = pd.ProbabilityOfTrading(distS, price, isBid, true, 0.0, refPrice)
+		} else {
+			isBid = false
+			calculatedProb = pd.ProbabilityOfTrading(distS, price, isBid, true, refPrice, refPrice*6)
+		}
+
+		// calculatedProb = getProbabilityOfTradingForOrder(riskParams.Mu, riskParams.Sigma, tauScaled, minPrice, maxPrice, price, refPrice, side)
+
+		log.Printf("Side: %v, Price: %v, Last calculated probability: %v, maxProbability: %v", side, price, calculatedProb, probability)
 	}
 
-	log.Printf("Side: %v, Price: %v, Last calculated probability: %v, maxProbability: %v", side, price, calculatedProb, probability)
+	// log.Printf("Side: %v, Price: %v, Last calculated probability: %v, maxProbability: %v", side, price, calculatedProb, probability)
 
 	return price
 }
