@@ -3,6 +3,7 @@ package main
 import (
 	// "fmt"
 	// "log"
+	"log"
 	"sync"
 
 	// "github.com/gorilla/websocket"
@@ -10,6 +11,7 @@ import (
 	vegapb "code.vegaprotocol.io/vega/protos/vega"
 	"github.com/shopspring/decimal"
 	"golang.org/x/exp/maps"
+	// vegapb "vega-mm/protos/vega"
 )
 
 type VegaStore struct {
@@ -23,6 +25,7 @@ type VegaStore struct {
 	orders             map[string]*vegapb.Order
 	position           *vegapb.Position
 	liquidityProvision *vegapb.LiquidityProvision
+	stakeToCcyVolume   string
 
 	marketDataUpdateCounter int64
 }
@@ -129,19 +132,27 @@ func (v *VegaStore) SetOrders(orders []*vegapb.Order) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 
+	var orderCount, deleteCount int
 	for _, ord := range orders {
 		if ord.Status != vegapb.Order_STATUS_ACTIVE {
 			delete(v.orders, ord.Id)
+			deleteCount += 1
 			continue
 		}
 
 		v.orders[ord.Id] = ord
+
+		orderCount += 1
 	}
+
+	// log.Printf(`Finished setting orders. %v orders deleted\n`, deleteCount)
+	// log.Printf(`Finished setting orders. %v orders recieved with "STATUS_ACTIVE"\n`, orderCount)
 }
 
 func (v *VegaStore) GetOrders() []*vegapb.Order {
 	v.mu.RLock()
 	defer v.mu.RUnlock()
+
 	return maps.Values(v.orders)
 }
 
@@ -167,6 +178,22 @@ func (v *VegaStore) GetLiquidityProvision() *vegapb.LiquidityProvision {
 	v.mu.RLock()
 	defer v.mu.RUnlock()
 	return v.liquidityProvision
+}
+
+func (v *VegaStore) SetStakeToCcyVolume(netParam *vegapb.NetworkParameter) {
+	if netParam.Key != "market.liquidity.stakeToCcyVolume" {
+		log.Printf("Incorrect net param provided to SetStakeToCcyVolume func: %v\n", netParam)
+		return
+	}
+	v.mu.Lock()
+	v.stakeToCcyVolume = netParam.Value
+	v.mu.Unlock()
+}
+
+func (v *VegaStore) GetStakeToCcyVolume() string {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	return v.stakeToCcyVolume
 }
 
 func (b *BinanceStore) Set(bid, ask decimal.Decimal) {
