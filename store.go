@@ -36,6 +36,7 @@ type BinanceStore struct {
 	market  string
 	bestBid decimal.Decimal
 	bestAsk decimal.Decimal
+	isStale bool
 }
 
 type DataStore struct {
@@ -55,6 +56,7 @@ func newVegaStore(marketId string) *VegaStore {
 
 func newBinanceStore(mkt string) *BinanceStore {
 	return &BinanceStore{
+		mu:     sync.RWMutex{},
 		market: mkt,
 	}
 }
@@ -128,6 +130,16 @@ func (v *VegaStore) GetAccounts() []*apipb.AccountBalance {
 	return maps.Values(v.accounts)
 }
 
+func (v *VegaStore) ClearOrders() {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+
+	for id := range v.orders {
+		delete(v.orders, id)
+	}
+
+}
+
 func (v *VegaStore) SetOrders(orders []*vegapb.Order) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -196,14 +208,20 @@ func (v *VegaStore) GetStakeToCcyVolume() string {
 	return v.stakeToCcyVolume
 }
 
-func (b *BinanceStore) Set(bid, ask decimal.Decimal) {
+func (b *BinanceStore) SetBestBidAndAsk(bid, ask decimal.Decimal) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.bestBid, b.bestAsk = bid, ask
 }
 
-func (b *BinanceStore) Get() (bid, ask decimal.Decimal) {
+func (b *BinanceStore) GetBestBid() (bid decimal.Decimal) {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.bestBid.Copy(), b.bestAsk.Copy()
+	return b.bestBid.Copy()
+}
+
+func (b *BinanceStore) GetBestAsk() (ask decimal.Decimal) {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.bestAsk.Copy()
 }

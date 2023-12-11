@@ -192,5 +192,8 @@ func StartMetricsApi(metricsCh chan *MetricsState) {
 	// })
 
 	http.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{Registry: reg}))
-	log.Fatal(http.ListenAndServe(":8079", nil))
+	log.Fatal(http.ListenAndServe(":8080", nil))
+
+	// Fairground
+	// log.Fatal(http.ListenAndServe(":8079", nil))
 }

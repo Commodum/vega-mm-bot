@@ -10,18 +10,20 @@ import (
 	"log"
 	"math"
 	"math/rand"
+	_ "runtime"
 
 	// "os"
 	"sort"
-	"strconv"
+	// "strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"code.vegaprotocol.io/vega/libs/crypto"
 	// "code.vegaprotocol.io/vega/libs/proto"
-	apipb "code.vegaprotocol.io/vega/protos/data-node/api/v2"
+	// apipb "code.vegaprotocol.io/vega/protos/data-node/api/v2"
 	vegaApiPb "code.vegaprotocol.io/vega/protos/vega/api/v1"
+
 	// vegapb "code.vegaprotocol.io/vega/protos/vega"
 	commandspb "code.vegaprotocol.io/vega/protos/vega/commands/v1"
 
@@ -136,6 +138,7 @@ type recentBlock struct {
 	SpamPowNumPastBlocks uint32
 	SpamPowNumTxPerBlock uint32
 	ChainId              string
+	NumGeneratePowCalls  uint32
 }
 
 type Worker interface {
@@ -162,57 +165,68 @@ func newWorker() Worker {
 }
 
 func (w *worker) GeneratePow() {
+	// runtime.Gosched() // Yield execution so we can fetch the last block.
+	w.mu.Lock()
 	if w.lastBlock == nil {
 		return
 	}
-	w.mu.Lock()
 	lb := *w.lastBlock
+	w.lastBlock.NumGeneratePowCalls++
 	if _, ok := w.powMap[lb.Height]; !ok {
 		w.powMap[lb.Height] = []*proofOfWork{}
 	}
-	numPow := len(w.powMap[lb.Height])
-	w.mu.Unlock()
 
-	fmt.Printf("NumPow: %v\n", numPow)
+	// numPow := len(w.powMap[lb.Height])
+	// numPow := 0
+	// for _, pow := range w.powMap[lb.Height] {
+	// 	if !pow.used {
+	// 		numPow++
+	// 	}
+	// }
+	// fmt.Printf("NumPow: %v\n", numPow)
+	// if numPow == 0 {
+	// }
 
-	if numPow == 0 {
-		wg := sync.WaitGroup{}
-		total := 6
-		for i := 0; i < total; i++ {
-			wg.Add(1)
-			go func(i int) {
-				// Get difficulty and adjust based on number of proofs for this block
-				difficulty := uint(lb.SpamPowDifficulty + uint32(math.Floor(float64(i/int(lb.SpamPowNumTxPerBlock)))))
-				txId, _ := uuid.NewRandom()
-				nonce, _, _ := crypto.PoW(lb.Hash, txId.String(), difficulty, lb.SpamPowHashFunction)
-				pow := &proofOfWork{
-					blockHash:   lb.Hash,
-					blockHeight: lb.Height,
-					difficulty:  difficulty,
-					nonce:       nonce,
-					txId:        txId.String(),
-					used:        false,
-				}
+	wg := sync.WaitGroup{}
+	total := uint32(4)
+	n := lb.NumGeneratePowCalls * total
+	for i := n; i < n+total; i++ {
+		// log.Printf("Generating proof at index %v at height %v\n", i, lb.Height)
+		wg.Add(1)
+		go func(i uint32) {
+			// Get difficulty and adjust based on number of proofs for this block
+			difficulty := uint(lb.SpamPowDifficulty + uint32(math.Floor(float64(i/lb.SpamPowNumTxPerBlock))))
+			// log.Printf("Generating proof at index %v, with difficulty %v, at height %v\n", i, difficulty, lb.Height)
+			txId, _ := uuid.NewRandom()
+			nonce, _, _ := crypto.PoW(lb.Hash, txId.String(), difficulty, lb.SpamPowHashFunction)
+			pow := &proofOfWork{
+				blockHash:   lb.Hash,
+				blockHeight: lb.Height,
+				difficulty:  difficulty,
+				nonce:       nonce,
+				txId:        txId.String(),
+				used:        false,
+			}
 
-				w.mu.Lock()
-				w.powMap[lb.Height] = append(w.powMap[lb.Height], pow)
-				w.mu.Unlock()
-				wg.Done()
-			}(i)
-		}
-		wg.Wait()
-		fmt.Printf("Calculated %v proofs of work for block with height %v.\n", total, lb.Height)
+			w.mu.Lock()
+			w.powMap[lb.Height] = append(w.powMap[lb.Height], pow)
+			w.mu.Unlock()
+			wg.Done()
+		}(i)
 	}
+	w.mu.Unlock()
+	wg.Wait()
+	fmt.Printf("Calculated %v proofs of work for block with height %v and indexes %v - %v\n", total, lb.Height, n, n+total)
 
 }
 
 func (w *worker) RemoveOldPow() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
 	if w.lastBlock == nil {
 		return
 	}
-
-	w.mu.Lock()
-	defer w.mu.Unlock()
 
 	// log.Printf("numPastBlocks: %v\n", w.lastBlock.SpamPowNumPastBlocks)
 	// log.Printf("numPastBlocks * keepFraction: %v\n", float64(w.lastBlock.SpamPowNumPastBlocks)*w.blockKeepFraction)
@@ -277,6 +291,7 @@ func (w *worker) GetPow() *proofOfWork {
 
 	pow := powSlice[0]
 	w.TaintPow(pow.txId, pow.blockHeight)
+	// log.Printf("Using proof with txid %v height %v and difficulty %v\n", pow.txId, pow.blockHeight, pow.difficulty)
 	return pow
 }
 
@@ -285,22 +300,30 @@ func (s *signer) StartWorker() {
 	// Fetch necessary net params (I think we can just use the values in the lastBlockRes instead)
 	// s.SetWorkerNetParams()
 
-	// Fetch last block
+	// Get first block before starting tickers to prevent race condition
+	lastBlock := s.GetLastBlock()
+	s.worker.mu.Lock()
+	s.worker.lastBlock = lastBlock
+	s.worker.mu.Unlock()
+
+	// Start fetching blocks
 	go func() {
-		for range time.NewTicker(time.Millisecond * 1000).C {
+		for range time.NewTicker(time.Millisecond * 600).C {
 			if s.vegaCoreReconnecting {
 				continue
 			}
 			lastBlock := s.GetLastBlock()
 			s.worker.mu.Lock()
-			s.worker.lastBlock = lastBlock
+			if lastBlock.Height > s.worker.lastBlock.Height {
+				s.worker.lastBlock = lastBlock
+			}
 			s.worker.mu.Unlock()
 		}
 	}()
 
 	// Generate PoW
 	go func() {
-		for range time.NewTicker(time.Millisecond * 1000).C {
+		for range time.NewTicker(time.Millisecond * 650).C {
 			s.worker.GeneratePow()
 		}
 	}()
@@ -345,30 +368,6 @@ func newSigner(wallet *embeddedWallet, vegaCoreAddrs []string, agent *agent) Sig
 	signer.StartWorker()
 
 	return signer
-}
-
-func (s *signer) SetWorkerNetParams() {
-
-	numPastBlocksRes, err := s.agent.vegaClient.svc.GetNetworkParameter(context.Background(), &apipb.GetNetworkParameterRequest{Key: "spam.pow.numberOfPastBlocks"})
-	if err != nil {
-		log.Fatalf("Failed to get numPastBlocks from data node: %v", err)
-	}
-	numTxPerBlockRes, err := s.agent.vegaClient.svc.GetNetworkParameter(context.Background(), &apipb.GetNetworkParameterRequest{Key: "spam.pow.numberOfTxPerBlock"})
-	if err != nil {
-		log.Fatalf("Failed to get numTxPerBlock from data node: %v", err)
-	}
-
-	s.worker.mu.Lock()
-	defer s.worker.mu.Unlock()
-
-	s.worker.numPastBlocks, err = strconv.Atoi(numPastBlocksRes.GetNetworkParameter().GetValue())
-	if err != nil {
-		log.Fatalf("Failed to convert net param string value to int: %v", err)
-	}
-	s.worker.numTxPerBlock, err = strconv.Atoi(numTxPerBlockRes.GetNetworkParameter().GetValue())
-	if err != nil {
-		log.Fatalf("Failed to convert net param string value to int: %v", err)
-	}
 }
 
 func (s *signer) SignInputData(privKey string, bundledInputData []byte) string {
@@ -438,8 +437,10 @@ func (s *signer) SubmitTx(tx *commandspb.Transaction) *vegaApiPb.SubmitTransacti
 		return nil
 	} else if !res.Success {
 		log.Printf("Tx not successful: tx = %s; code = %d; data = %s\n", res.TxHash, res.Code, res.Data)
+		// log.Printf("PoW for Tx: %+v\n", tx.Pow)
 	} else {
-		log.Printf("Tx successful: TxHash: %v", res.TxHash)
+		log.Printf("Tx successful: TxHash: %v\n", res.TxHash)
+		// log.Printf("PoW for Tx: %+v\n", tx.Pow)
 	}
 	return res
 }

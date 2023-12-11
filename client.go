@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"strconv"
+	"strings"
 	"time"
 
 	// "encoding/json"
@@ -15,6 +18,9 @@ import (
 
 	// "github.com/davecgh/go-spew/spew"
 	apipb "code.vegaprotocol.io/vega/protos/data-node/api/v2"
+	"github.com/gorilla/websocket"
+	"github.com/shopspring/decimal"
+
 	// apipb "vega-mm/protos/data-node/api/v2"
 	vegapb "code.vegaprotocol.io/vega/protos/vega"
 	// "github.com/gorilla/websocket"
@@ -34,18 +40,187 @@ type VegaClient struct {
 	reconnecting  bool
 }
 
-// type VegaStore struct {
-// 	mu sync.RWMutex
+type BinanceClient struct {
+	agent        *agent
+	wsAddr       string
+	markets      map[string]string
+	reconnChan   chan struct{}
+	reconnecting bool
+}
 
-// 	marketId string
-// 	market *vegapb.Market
-// 	marketData *vegapb.MarketData
-// 	accounts map[string]*apipb.AccountBalance
-// 	orders map[string]*vegapb.Order
-// 	position *vegapb.Position
-// }
+func newBinanceClient(agent *agent, wsAddr string) *BinanceClient {
+	return &BinanceClient{
+		agent:      agent,
+		wsAddr:     wsAddr,
+		markets:    map[string]string{},
+		reconnChan: make(chan struct{}),
+	}
+}
 
-func (vegaClient *VegaClient) testGrpcAddresses() {
+func (b *BinanceClient) handleBinanceReconnect() {
+
+	log.Printf("Attempting to reconnect to Binance websocket...")
+	if b.reconnecting {
+		return
+	}
+	b.reconnecting = true
+	b.reconnChan <- struct{}{}
+}
+
+func (b *BinanceClient) RunBinanceReconnectHandler() {
+
+	for {
+		select {
+		case <-b.reconnChan:
+
+			b.StreamBinanceData()
+			b.reconnecting = false
+
+			// After we finish reconnecting mark the binance datastores as not stale.
+			for _, strat := range b.agent.strategies {
+				strat.binanceStore.isStale = false
+			}
+		}
+	}
+
+}
+
+func (b *BinanceClient) StreamBinanceData() {
+
+	delayReconnect := func() {
+		for _, strat := range b.agent.strategies {
+			strat.binanceStore.isStale = true // Mark binance data as stale as we might not be able to reconnect for a while
+		}
+		time.Sleep(30 * time.Second)
+	}
+
+	conn, _, err := websocket.DefaultDialer.Dial(b.wsAddr, nil)
+	if err != nil {
+		log.Printf("Could not dial binance websocket address. Will try again later.")
+		b.reconnecting = false
+		delayReconnect()
+		b.handleBinanceReconnect()
+		return
+	}
+
+	reqParams := []string{}
+	// for binanceMarket := range b.markets {
+	// 	reqParams = append(reqParams, fmt.Sprintf("%s@ticker", strings.ToLower(binanceMarket)))
+	// }
+	for binanceMarket := range b.markets {
+		reqParams = append(reqParams, fmt.Sprintf("%s@bookTicker", strings.ToLower(binanceMarket)))
+	}
+
+	req := struct {
+		ID     uint     `json:"id"`
+		Method string   `json:"method"`
+		Params []string `json:"params"`
+	}{
+		ID:     1,
+		Method: "SUBSCRIBE",
+		Params: reqParams,
+	}
+
+	reqBytes, _ := json.Marshal(req)
+	err = conn.WriteMessage(websocket.TextMessage, reqBytes)
+	if err != nil {
+		log.Printf("Could not write message on binance websocket. Will try again later.")
+		b.reconnecting = false
+		delayReconnect()
+		b.handleBinanceReconnect()
+		return
+	}
+
+	// Discard first message
+	_, _, err = conn.ReadMessage()
+	if err != nil {
+		log.Printf("Could not read message from binance websocket. Will try again later.")
+		conn.Close()
+		b.reconnecting = false
+		delayReconnect()
+		b.handleBinanceReconnect()
+		return
+	}
+
+	// res := struct {
+	// 	Symbol   string          `json:"s"`
+	// 	E        string          `json:"e"`
+	// 	AskPrice decimal.Decimal `json:"a"`
+	// 	BidPrice decimal.Decimal `json:"b"`
+	// 	// Unused, present for correct unmarshalling
+	// 	NotE uint64 `json:"E"`
+	// 	NotA string `json:"A"`
+	// 	NotB string `json:"B"`
+	// }{}
+	res := struct {
+		Symbol   string          `json:"s"`
+		AskPrice decimal.Decimal `json:"a"`
+		BidPrice decimal.Decimal `json:"b"`
+		// Unused, present for correct unmarshalling
+		NotA string `json:"A"`
+		NotB string `json:"B"`
+	}{}
+
+	go func() {
+		defer conn.Close()
+		rateCalc := struct {
+			mu         sync.RWMutex
+			startTime  int64
+			msgCounter int64
+		}{
+			mu:         sync.RWMutex{},
+			startTime:  time.Now().UnixMicro(),
+			msgCounter: 0,
+		}
+		go func() {
+			for range time.NewTicker(time.Second).C {
+				rateCalc.mu.Lock()
+				msgRate := float64(rateCalc.msgCounter*1000000) / float64((time.Now().UnixMicro() - rateCalc.startTime))
+				log.Printf("Binance message rate: %v", strconv.FormatFloat(msgRate, 'f', 2, 64))
+
+				rateCalc.startTime = time.Now().UnixMicro()
+				rateCalc.msgCounter = 0
+				rateCalc.mu.Unlock()
+			}
+		}()
+		for {
+			_, msg, err := conn.ReadMessage()
+			if err != nil {
+				log.Printf("Could not read message from Binance websocket: %v\n", err)
+				b.handleBinanceReconnect()
+				return
+			}
+
+			// log.Printf("Response from Binance Websocket: %v\n", string(msg))
+
+			err = json.Unmarshal(msg, &res)
+			if err != nil {
+				log.Printf("Failed to unmarshal response from Binance websocket: %v\n", err)
+				b.handleBinanceReconnect()
+				return
+			}
+
+			// if res.E != "24hrTicker" {
+			// 	log.Printf("Unknown event recieved from Binance websocket...\n")
+			// 	continue
+			// }
+
+			// log.Printf("strats: %+v\n", b.agent.strategies)
+			// log.Printf("b.markets: %+v\n", b.markets)
+			// log.Printf("res.Symbol: %+v\n", res.Symbol)
+			// log.Printf("Binance best bid and ask: %+v, %+v\n", res.BidPrice, res.AskPrice)
+
+			rateCalc.mu.Lock()
+			rateCalc.msgCounter++
+			rateCalc.mu.Unlock()
+
+			b.agent.strategies[b.markets[res.Symbol]].binanceStore.SetBestBidAndAsk(res.BidPrice, res.AskPrice)
+		}
+	}()
+
+}
+
+func (vegaClient *VegaClient) testGrpcAddresses() (ok bool) {
 
 	// We need to re-write this to handle the case where all datanodes are down and unreachable.
 	// Alternatively, standardize the clients and reconnect handlers with a new API client implementation.
@@ -95,11 +270,22 @@ func (vegaClient *VegaClient) testGrpcAddresses() {
 	sort.Slice(successes, func(i, j int) bool {
 		return successes[i].latencyMs < successes[j].latencyMs
 	})
+
+	if len(successes) == 0 {
+		ok = false
+		return
+	} else {
+		ok = true
+	}
+
 	fmt.Printf("Lowest latency grpc address was: %v with %vms latency\n", successes[0].addr, successes[0].latencyMs)
 	fmt.Printf("Setting vegaClient grpc address to %v\n", successes[0])
 	vegaClient.grpcAddr = successes[0].addr
+	return
 }
 
+// This reconnect logic has some rare edge cases where a datanode fails after it has been tested successfully
+// but before all the trading data is fully loaded from it. Refactor this to handle these edge cases.
 func (vegaClient *VegaClient) RunVegaClientReconnectHandler() {
 
 	for {
@@ -132,12 +318,16 @@ func (vegaClient *VegaClient) handleGrpcReconnect() {
 func (vegaClient *VegaClient) StreamVegaData(wg *sync.WaitGroup) {
 
 	// Test all available addresses
-	vegaClient.testGrpcAddresses()
+	ok := vegaClient.testGrpcAddresses()
+	if !ok { // Test failed for all addrs. If we don't have other reference price we should stop quoting.
+		log.Fatal("No vega datanodes are reachable... Exiting.\n")
+	}
 
 	conn, err := grpc.Dial(vegaClient.grpcAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		log.Printf("Could not open connection to datanode: %v\n", err)
-		vegaClient.handleGrpcReconnect()
+		log.Fatalf("Could not open connection to datanode: %v\n", err)
+		// log.Printf("Could not open connection to datanode: %v\n", err)
+		// vegaClient.handleGrpcReconnect()
 		return
 	}
 
@@ -398,6 +588,9 @@ func (v *VegaClient) streamOrders() {
 			v.handleGrpcReconnect()
 			return
 		}
+
+		// Empty store before we start stream in case of reconnect with stale orders
+		v.agent.strategies[marketId].vegaStore.ClearOrders()
 
 		go func(marketId string, stream apipb.TradingDataService_ObserveOrdersClient) {
 			for {
