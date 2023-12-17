@@ -90,22 +90,22 @@ func main() {
 		marketId:                "4e9081e20e9e81f3e747d42cb0c9b8826454df01899e6027a22e771e19cc79fc",
 		binanceMarket:           "BTCUSDT",
 		targetObligationVolume:  150000, // Minimum 10k on mainnet (min commitment: 500, stakeToCcyVolume: 20)
-		maxProbabilityOfTrading: 0.825,  // Determines where to place the first order in the distribution
-		orderSpacing:            0.00055,
-		orderSizeBase:           1.65,
-		targetVolCoefficient:    1.15, // Aim to quote 1.1x targetObligationVolume on each side
-		numOrdersPerSide:        10,
+		maxProbabilityOfTrading: 0.875,  // Determines where to place the first order in the distribution
+		orderSpacing:            0.0005,
+		orderSizeBase:           1.4,
+		targetVolCoefficient:    1.1, // Aim to quote 1.1x targetObligationVolume on each side
+		numOrdersPerSide:        7,
 	}
 
 	ethPerpStrategyOpts := &StrategyOpts{
 		marketId:                "e63a37edae8b74599d976f5dedbf3316af82579447f7a08ae0495a021fd44d13",
 		binanceMarket:           "ETHUSDT",
 		targetObligationVolume:  140000, // Minimum 10k on mainnet (min commitment: 500, stakeToCcyVolume: 20)
-		maxProbabilityOfTrading: 0.825,
-		orderSpacing:            0.0006,
-		orderSizeBase:           1.8,
+		maxProbabilityOfTrading: 0.875,
+		orderSpacing:            0.0005,
+		orderSizeBase:           1.4,
 		targetVolCoefficient:    1.1,
-		numOrdersPerSide:        10,
+		numOrdersPerSide:        7,
 	}
 
 	solPerpStrategyOpts := &StrategyOpts{
@@ -113,21 +113,21 @@ func main() {
 		binanceMarket:           "SOLUSDT",
 		targetObligationVolume:  75000, // Minimum 10k on mainnet (min commitment: 500, stakeToCcyVolume: 20)
 		maxProbabilityOfTrading: 0.825,
-		orderSpacing:            0.001,
+		orderSpacing:            0.00085,
 		orderSizeBase:           1.75,
 		targetVolCoefficient:    1.1,
-		numOrdersPerSide:        10,
+		numOrdersPerSide:        11,
 	}
 
 	linkPerpStrategyOpts := &StrategyOpts{
 		marketId:                "74f8bb5c2236dac8f29ee10c18d70d553b8faa180f288b559ef795d0faeb3607",
 		binanceMarket:           "LINKUSDT",
-		targetObligationVolume:  50000, // Minimum 10k on mainnet (min commitment: 500, stakeToCcyVolume: 20)
-		maxProbabilityOfTrading: 0.85,
-		orderSpacing:            0.00075,
-		orderSizeBase:           1.75,
-		targetVolCoefficient:    1.15,
-		numOrdersPerSide:        12,
+		targetObligationVolume:  75000, // Minimum 10k on mainnet (min commitment: 500, stakeToCcyVolume: 20)
+		maxProbabilityOfTrading: 0.825,
+		orderSpacing:            0.00065,
+		orderSizeBase:           1.6,
+		targetVolCoefficient:    1.1,
+		numOrdersPerSide:        7,
 	}
 
 	btcPerpStrategy := NewStrategy(btcPerpStrategyOpts)

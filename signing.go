@@ -188,7 +188,7 @@ func (w *worker) GeneratePow() {
 	// }
 
 	wg := sync.WaitGroup{}
-	total := uint32(4)
+	total := uint32(5)
 	n := lb.NumGeneratePowCalls * total
 	for i := n; i < n+total; i++ {
 		// log.Printf("Generating proof at index %v at height %v\n", i, lb.Height)
@@ -216,7 +216,7 @@ func (w *worker) GeneratePow() {
 	}
 	w.mu.Unlock()
 	wg.Wait()
-	fmt.Printf("Calculated %v proofs of work for block with height %v and indexes %v - %v\n", total, lb.Height, n, n+total)
+	fmt.Printf("Calculated %v proofs of work for block with height %v and indexes %v - %v\n", total, lb.Height, n, n+total-1)
 
 }
 
@@ -308,7 +308,7 @@ func (s *signer) StartWorker() {
 
 	// Start fetching blocks
 	go func() {
-		for range time.NewTicker(time.Millisecond * 600).C {
+		for range time.NewTicker(time.Millisecond * 500).C {
 			if s.vegaCoreReconnecting {
 				continue
 			}
@@ -316,17 +316,21 @@ func (s *signer) StartWorker() {
 			s.worker.mu.Lock()
 			if lastBlock.Height > s.worker.lastBlock.Height {
 				s.worker.lastBlock = lastBlock
+				s.worker.mu.Unlock()
+				s.worker.GeneratePow()
+			} else {
+				s.worker.mu.Unlock()
 			}
-			s.worker.mu.Unlock()
+			// s.worker.mu.Unlock()
 		}
 	}()
 
 	// Generate PoW
-	go func() {
-		for range time.NewTicker(time.Millisecond * 650).C {
-			s.worker.GeneratePow()
-		}
-	}()
+	// go func() {
+	// 	for range time.NewTicker(time.Millisecond * 650).C {
+	// 		s.worker.GeneratePow()
+	// 	}
+	// }()
 
 	// Prune old PoW
 	go func() {
@@ -567,7 +571,5 @@ func (s *signer) TestVegaCoreAddrs() {
 	fmt.Printf("Lowest latency core address was: %v with %vms latency\n", successes[0].addr, successes[0].latencyMs)
 	fmt.Printf("Setting signer vegaCoreAddr to %v\n", successes[0])
 	s.vegaCoreAddr = successes[0].addr
-
-	// After successfully connecting to a Core API we should generate a burst of proofs of work
 
 }
