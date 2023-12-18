@@ -8,7 +8,6 @@ require (
 	github.com/golang/protobuf v1.5.3
 	github.com/google/uuid v1.4.0
 	github.com/gorilla/websocket v1.5.0
-	github.com/jeremyletang/vega-go-sdk v0.0.0-20231002102344-232d3138de0d
 	github.com/prometheus/client_golang v1.17.0
 	github.com/shopspring/decimal v1.3.1
 	github.com/tyler-smith/go-bip39 v1.1.0

@@ -1,3 +1,0 @@
-package pow
-
-func testSpamStat()
