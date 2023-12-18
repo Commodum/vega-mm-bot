@@ -125,9 +125,9 @@ func main() {
 		targetObligationVolume:  75000, // Minimum 10k on mainnet (min commitment: 500, stakeToCcyVolume: 20)
 		maxProbabilityOfTrading: 0.825,
 		orderSpacing:            0.00065,
-		orderSizeBase:           1.6,
+		orderSizeBase:           1.75,
 		targetVolCoefficient:    1.1,
-		numOrdersPerSide:        7,
+		numOrdersPerSide:        8,
 	}
 
 	btcPerpStrategy := NewStrategy(btcPerpStrategyOpts)
