@@ -23,7 +23,7 @@ func NewPowStore(pubKey string) *PowStore {
 	}
 }
 
-func (p *PowStore) SetPows(proofs []*ProofOfWork) int64 {
+func (p *PowStore) SetPows(proofs []*ProofOfWork) (n int64) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -32,8 +32,9 @@ func (p *PowStore) SetPows(proofs []*ProofOfWork) int64 {
 			p.pows[pow.BlockHeight] = []*ProofOfWork{}
 		}
 		p.pows[pow.BlockHeight] = append(p.pows[pow.BlockHeight], pow)
+		n += 1
 	}
-
+	return
 }
 
 func (p *PowStore) GetPow() *ProofOfWork {

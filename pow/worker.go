@@ -6,7 +6,6 @@ import (
 	"math"
 	"sort"
 	"sync"
-	"vega-mm/wallets"
 
 	"code.vegaprotocol.io/vega/libs/crypto"
 	"golang.org/x/exp/maps"
@@ -25,8 +24,7 @@ type worker struct {
 	pubkeys           map[uint32]string
 	blockKeepFraction float64
 
-	stores  map[string]PowStore
-	signers map[string]*wallets.VegaSigner
+	stores map[string]*PowStore
 }
 
 type ProofOfWork struct {
@@ -46,6 +44,10 @@ func newWorker() *worker {
 }
 
 func (w *worker) Init(inCh chan *coreapipb.PoWStatistic, pubkeys map[uint32]string) {
+	powStores := map[string]*PowStore{}
+	for str := range maps.Values(pubkeys) {
+
+	}
 
 }
 

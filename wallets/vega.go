@@ -2,42 +2,21 @@ package wallets
 
 import (
 	"bytes"
-	"context"
 	"crypto/ed25519"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
-	"math"
 	"math/rand"
-	_ "runtime"
-	"vega-mm/pow-engine"
-	"vega-mm/trading-engine"
-
-	// "os"
-	"sort"
-	// "strconv"
 	"strings"
 	"sync"
-	"time"
+	"vega-mm/pow"
 
-	"code.vegaprotocol.io/vega/libs/crypto"
-	// "code.vegaprotocol.io/vega/libs/proto"
-	// apipb "code.vegaprotocol.io/vega/protos/data-node/api/v2"
-	coreapipb "code.vegaprotocol.io/vega/protos/vega/api/v1"
-
-	// vegapb "code.vegaprotocol.io/vega/protos/vega"
 	commandspb "code.vegaprotocol.io/vega/protos/vega/commands/v1"
-
-	// vegaWallet "code.vegaprotocol.io/vega/wallet/wallet"
 	"github.com/golang/protobuf/proto"
-	"github.com/google/uuid"
 	"github.com/tyler-smith/go-bip39"
 	slip10 "github.com/vegaprotocol/go-slip10"
 	"golang.org/x/crypto/sha3"
-	"golang.org/x/exp/maps"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 )
 
 // Let's define our workflow for creating, signing, and sending a transaction:
@@ -134,18 +113,16 @@ type VegaSigner struct {
 
 	txOutCh  chan *commandspb.Transaction
 	keypair  *vegaKeyPair
-	agent    *trading.Agent
 	chainId  string
-	powStore pow.PowStore
+	powStore *pow.PowStore
 
 	// pows    map[uint64][]*pow.ProofOfWork
 }
 
-func NewVegaSigner(keyPair *vegaKeyPair, agent *trading.Agent) *VegaSigner {
+func NewVegaSigner(keyPair *vegaKeyPair) *VegaSigner {
 	return &VegaSigner{
 		keypair:  keyPair,
-		agent:    agent,
-		powStore: *pow.NewPowStore(keyPair.pubKey),
+		powStore: pow.NewPowStore(keyPair.pubKey),
 		// pows:    map[uint64][]*pow.ProofOfWork{},
 	}
 }
@@ -165,7 +142,7 @@ func (s *VegaSigner) BuildTx(inputData *commandspb.InputData) *commandspb.Transa
 	fmt.Printf("Building Tx...\n")
 	keyPair := s.keypair
 	chainId := s.getChainId()
-	pow := s.getPow()
+	pow := s.powStore.GetPow()
 
 	inputData.BlockHeight = pow.BlockHeight
 	inputData.Nonce = rand.Uint64()
