@@ -67,14 +67,7 @@ func main() {
 	// Get config
 	config := parseFlags()
 
-	// walletClient, err := wallet.NewClient(defaultWalletServiceAddr, config.WalletToken)
-	// // _, err := wallet.NewClient(defaultWalletServiceAddr, config.WalletToken)
-	// if err != nil {
-	// 	log.Fatalf("Could not connect to wallet: %v", err)
-	// }
-
 	// agent := NewAgent(walletClient, config)
-
 	// mnemonic := os.Getenv("FAIRGROUND_MNEMONIC")
 	homePath := os.Getenv("HOME")
 	// mnemonic, err := os.ReadFile(fmt.Sprintf("%v/.config/vega-mm-fairground/embedded-wallet/mnemonic.txt", homePath))

@@ -19,39 +19,26 @@ import (
 	"golang.org/x/crypto/sha3"
 )
 
-// Let's define our workflow for creating, signing, and sending a transaction:
-//	- Create/load wallet
-//	- Continuously calculate PoW
-//		- Get recent block
-//		- Compute n proofs with increasing difficulty every "txPerBlock"
-//		- Remove old proofs
-//	- Build input data for command
-//	- Build tx
-//		- Sign input data
-//		- Get PoW
-//		- Assemble tx
-//	- Submit tx to core node
-
-type vegaKeyPair struct {
+type VegaKeyPair struct {
 	pubKey  string
 	privKey string
 }
 
-type embeddedWallet struct {
+type EmbeddedWallet struct {
 	seed []byte
-	keys map[uint64]*vegaKeyPair
+	keys map[uint64]*VegaKeyPair
 }
 
-func newWallet(mnemonic string) *embeddedWallet {
+func NewWallet(mnemonic string) *EmbeddedWallet {
 	if len(mnemonic) == 0 {
 		log.Fatalf("Invalid mnemonic provided...")
 	}
 
 	sanitizedMnemonic := strings.Join(strings.Fields(mnemonic), " ")
 	seed := bip39.NewSeed(sanitizedMnemonic, "")
-	ew := &embeddedWallet{
+	ew := &EmbeddedWallet{
 		seed: seed,
-		keys: map[uint64]*vegaKeyPair{},
+		keys: map[uint64]*VegaKeyPair{},
 	}
 
 	// Derive first key pair
@@ -70,7 +57,7 @@ func newWallet(mnemonic string) *embeddedWallet {
 	// }
 }
 
-func (w *embeddedWallet) getKeyPair(index uint64) *vegaKeyPair {
+func (w *EmbeddedWallet) getKeyPair(index uint64) *VegaKeyPair {
 	if kp, ok := w.keys[index]; ok {
 		return kp
 	}
@@ -84,7 +71,7 @@ func (w *embeddedWallet) getKeyPair(index uint64) *vegaKeyPair {
 
 	pubKey, privKey := node.Keypair()
 	hexPubKey, hexPrivKey := fmt.Sprintf("%x", pubKey), fmt.Sprintf("%x", privKey)
-	w.keys[index] = &vegaKeyPair{pubKey: hexPubKey, privKey: hexPrivKey}
+	w.keys[index] = &VegaKeyPair{pubKey: hexPubKey, privKey: hexPrivKey}
 
 	fmt.Printf("Derived key pair with pubkey value: %v\n", hexPubKey)
 
@@ -93,7 +80,7 @@ func (w *embeddedWallet) getKeyPair(index uint64) *vegaKeyPair {
 	return w.keys[index]
 }
 
-func (w *embeddedWallet) getKeyPairByPublicKey(pubKey string) (*vegaKeyPair, error) {
+func (w *EmbeddedWallet) getKeyPairByPublicKey(pubKey string) (*VegaKeyPair, error) {
 	pubKey = strings.ToLower(pubKey)
 	for _, keyPair := range w.keys {
 		if keyPair.pubKey == pubKey {
@@ -111,20 +98,34 @@ type Signer interface {
 type VegaSigner struct {
 	mu sync.RWMutex
 
+	txDataCh chan *commandspb.InputData
 	txOutCh  chan *commandspb.Transaction
-	keypair  *vegaKeyPair
+	keypair  *VegaKeyPair
 	chainId  string
 	powStore *pow.PowStore
 
 	// pows    map[uint64][]*pow.ProofOfWork
 }
 
-func NewVegaSigner(keyPair *vegaKeyPair) *VegaSigner {
+func (s *VegaSigner) GetInChan() chan *commandspb.InputData {
+	return s.txDataCh
+}
+
+func (s *VegaSigner) GetOutChan() chan *commandspb.Transaction {
+	return s.txOutCh
+}
+
+func NewVegaSigner(w *EmbeddedWallet, idx uint64, txBroadcastCh chan *commandspb.Transaction) (signer *VegaSigner, pubkey string) {
+	keyPair := w.getKeyPair(idx)
 	return &VegaSigner{
+		mu: sync.RWMutex{},
+
+		txDataCh: make(chan *commandspb.InputData, 5),
+		txOutCh:  txBroadcastCh,
+
 		keypair:  keyPair,
 		powStore: pow.NewPowStore(keyPair.pubKey),
-		// pows:    map[uint64][]*pow.ProofOfWork{},
-	}
+	}, keyPair.pubKey
 }
 
 func (s *VegaSigner) SignInputData(bundledInputData []byte) string {

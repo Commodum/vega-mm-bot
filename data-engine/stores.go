@@ -210,3 +210,7 @@ func (b *BinanceStore) GetBestAsk() (ask decimal.Decimal) {
 	defer b.mu.RUnlock()
 	return b.bestAsk.Copy()
 }
+
+func (b *BinanceStore) IsStale() bool {
+	return b.isStale
+}
