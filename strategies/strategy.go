@@ -4,8 +4,10 @@ import (
 	"log"
 	"math"
 	"strconv"
+	"sync"
 	"time"
 	"vega-mm/data-engine"
+	"vega-mm/metrics"
 
 	pd "code.vegaprotocol.io/quant/pricedistribution"
 	"code.vegaprotocol.io/quant/riskmodelbs"
@@ -79,8 +81,15 @@ type StrategyOpts[T OptsType] struct {
 	specific T
 }
 
+type syncPubKeyBalance struct {
+	mu    sync.RWMutex
+	value decimal.Decimal
+}
+
 type MartingaleStrategy struct {
-	d *decimals
+	d                  *decimals
+	agentPubKey        string
+	agentPubKeyBalance syncPubKeyBalance
 
 	*GeneralOpts
 	*MartingaleOpts
@@ -122,7 +131,10 @@ type Strategy interface {
 	AmendLiquidityCommitment()
 	CancelLiquidityCommitment()
 
-	RunStrategy()
+	RunStrategy(chan *metrics.MetricsState)
+
+	SetAgentPubKeyBalance(decimal.Decimal)
+	GetAgentPubKeyBalance() decimal.Decimal
 
 	GetOurBestBidAndAsk([]*vegapb.Order) (decimal.Decimal, decimal.Decimal)
 
@@ -146,8 +158,8 @@ func NewMartingaleStrategy(opts *StrategyOpts[Martingale]) *MartingaleStrategy {
 	return &MartingaleStrategy{
 		GeneralOpts:    opts.general,
 		MartingaleOpts: opts.specific,
-		vegaStore:      data.NewVegaStore(opts.marketId),
-		binanceStore:   data.NewBinanceStore(opts.binanceMarket),
+		vegaStore:      data.NewVegaStore(opts.general.vegaMarketId),
+		binanceStore:   data.NewBinanceStore(opts.general.binanceMarket),
 	}
 }
 
@@ -294,6 +306,18 @@ func (strat *MartingaleStrategy) CancelLiquidityCommitment() {
 
 }
 
+func (s *MartingaleStrategy) SetAgentPubKeyBalance(balance decimal.Decimal) {
+	s.agentPubKeyBalance.mu.Lock()
+	defer s.agentPubKeyBalance.mu.Unlock()
+	s.agentPubKeyBalance.value = balance
+}
+
+func (s *MartingaleStrategy) GetAgentPubKeyBalance() decimal.Decimal {
+	s.agentPubKeyBalance.mu.RLock()
+	defer s.agentPubKeyBalance.mu.RUnlock()
+	return s.agentPubKeyBalance.value
+}
+
 func (strat *MartingaleStrategy) GetOurBestBidAndAsk(liveOrders []*vegapb.Order) (decimal.Decimal, decimal.Decimal) {
 	ourBestBid, ourBestAsk := 0, math.MaxInt
 	for _, order := range liveOrders {
@@ -335,7 +359,7 @@ func (strat *MartingaleStrategy) GetPubkeyBalance(settlementAsset string) (b dec
 	// marketId := maps.Keys(vega)[0]
 
 	for _, acc := range strat.vegaStore.GetAccounts() {
-		if acc.Owner != strat.agent.pubkey || acc.Asset != settlementAsset {
+		if acc.Owner != strat.agentPubKey || acc.Asset != settlementAsset {
 			continue
 		}
 
@@ -626,18 +650,13 @@ func cdf(m, stddev, x float64) float64 {
 	return 0.5 * math.Erfc(-(math.Log(x)-m)/math.Sqrt(2.0)*stddev)
 }
 
-func (strat *MartingaleStrategy) RunStrategy(metricsCh chan *MetricsState) {
-	// Currently, for this setup, the agent has one set of strategy logic and each "strategy" we register
-	// with it is just a different set of parameters for the same strategy logic. This is fine when we just
-	// want to run a simple strategy to earn LP fees on multiple markets but if we want to run more
-	// complex strategies that have distinct logic from one another then we need to refactor this to call
-	// a "Run" method on a strategy interface. Then each strategy can have it's own set of business logic.
+func (strat *MartingaleStrategy) RunStrategy(metricsCh chan *metrics.MetricsState) {
 
 	for range time.NewTicker(750 * time.Millisecond).C {
 		log.Printf("Executing strategy for %v...", strat.binanceMarket)
 
 		var (
-			marketId        = strat.marketId
+			marketId        = strat.vegaMarketId
 			market          = strat.vegaStore.GetMarket()
 			settlementAsset = market.GetTradableInstrument().GetInstrument().GetPerpetual().GetSettlementAsset()
 
@@ -674,7 +693,7 @@ func (strat *MartingaleStrategy) RunStrategy(metricsCh chan *MetricsState) {
 			cancellations = []*commandspb.OrderCancellation{}
 		)
 
-		strat.agent.balance = balance
+		strat.SetAgentPubKeyBalance(balance)
 
 		log.Println("numLiveOrders: ", len(liveOrders))
 		// log.Printf("Our best bid: %v, Our best ask: %v", ourBestBid, ourBestAsk)
@@ -689,7 +708,7 @@ func (strat *MartingaleStrategy) RunStrategy(metricsCh chan *MetricsState) {
 		for i, threshold := range neutralityThresholds {
 			// _ = i
 			// _ = neutralityOffsets
-			value := strat.agent.balance.Mul(decimal.NewFromFloat(threshold))
+			value := strat.GetAgentPubKeyBalance().Mul(decimal.NewFromFloat(threshold))
 			switch true {
 			case signedExposure.GreaterThan(value):
 				// Too much long exposure, step back bid
@@ -758,7 +777,7 @@ func (strat *MartingaleStrategy) RunStrategy(metricsCh chan *MetricsState) {
 			// of one big order right at the front. Either that or disable this feature completely and use other neutrality
 			// strategies.
 			submissions = append(submissions, &commandspb.OrderSubmission{
-				MarketId: strat.marketId,
+				MarketId: strat.vegaMarketId,
 				// Price:       price.BigInt().String(),
 				Price:       binancePrice.Mul(strat.d.priceFactor).BigInt().String(),
 				Size:        openVol.Mul(strat.d.positionFactor).Abs().BigInt().Uint64(),
@@ -772,7 +791,7 @@ func (strat *MartingaleStrategy) RunStrategy(metricsCh chan *MetricsState) {
 
 		}
 
-		cancellations = append(cancellations, &commandspb.OrderCancellation{MarketId: strat.marketId})
+		cancellations = append(cancellations, &commandspb.OrderCancellation{MarketId: strat.vegaMarketId})
 
 		submissions = append(
 			submissions,
@@ -782,8 +801,9 @@ func (strat *MartingaleStrategy) RunStrategy(metricsCh chan *MetricsState) {
 			)...,
 		)
 
-		state := &MetricsState{
+		state := &metrics.MetricsState{
 			MarketId:              marketId,
+			BinanceTicker:         strat.binanceMarket,
 			Position:              strat.vegaStore.GetPosition(),
 			SignedExposure:        signedExposure,
 			VegaBestBid:           vegaBestBid.Div(strat.d.priceFactor),
@@ -791,7 +811,7 @@ func (strat *MartingaleStrategy) RunStrategy(metricsCh chan *MetricsState) {
 			VegaBestAsk:           vegaBestAsk.Div(strat.d.priceFactor),
 			OurBestAsk:            ourBestAsk,
 			LiveOrdersCount:       len(strat.vegaStore.GetOrders()),
-			MarketDataUpdateCount: int(strat.vegaStore.marketDataUpdateCounter),
+			MarketDataUpdateCount: int(strat.vegaStore.GetMarketDataUpdateCounter()),
 		}
 
 		metricsCh <- state
@@ -812,24 +832,13 @@ func (strat *MartingaleStrategy) RunStrategy(metricsCh chan *MetricsState) {
 		// log.Printf("Batch market instructions: %v", inputData.Command.(*commandspb.InputData_BatchMarketInstructions).BatchMarketInstructions)
 		// log.Printf("Submissions: %v", inputData.Command.(*commandspb.InputData_BatchMarketInstructions).BatchMarketInstructions.Submissions)
 
-		tx := a.signer.BuildTx(a.pubkey, inputData)
+		strat.txDataCh <- inputData
 
-		res := a.signer.SubmitTx(tx)
+		// tx := a.signer.BuildTx(a.pubkey, inputData)
 
-		log.Printf("%v Tx Response: %v", strat.binanceMarket, res)
+		// res := a.signer.SubmitTx(tx)
 
-		// // Send transaction
-		// err := strat.agent.walletClient.SendTransaction(
-		// 	context.Background(), strat.agent.pubkey, &walletpb.SubmitTransactionRequest{
-		// 		Command: &walletpb.SubmitTransactionRequest_BatchMarketInstructions{
-		// 			BatchMarketInstructions: &batch,
-		// 		},
-		// 	},
-		// )
-
-		// if err != nil {
-		// 	log.Printf("Error subitting the batch: %v", err)
-		// }
+		// log.Printf("%v Tx Response: %v", strat.binanceMarket, res)
 
 	}
 

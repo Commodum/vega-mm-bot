@@ -15,6 +15,7 @@ import (
 
 type MetricsState struct {
 	MarketId                  string
+	BinanceTicker             string
 	Position                  *vegapb.Position
 	SignedExposure            decimal.Decimal
 	VegaBestBid               decimal.Decimal

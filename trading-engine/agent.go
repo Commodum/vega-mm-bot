@@ -2,6 +2,7 @@ package trading
 
 import (
 	"log"
+	"vega-mm/metrics"
 	"vega-mm/pow"
 	"vega-mm/strategies"
 	"vega-mm/wallets"
@@ -16,7 +17,6 @@ type Agent struct {
 	apiToken   string
 	balance    decimal.Decimal
 	strategies map[string]strats.Strategy
-	powStore   *pow.PowStore
 	txDataCh   chan *commandspb.InputData
 	signer     *wallets.VegaSigner
 	// config     *Config
@@ -24,7 +24,7 @@ type Agent struct {
 }
 
 func NewAgent(wallet *wallets.EmbeddedWallet, keyPairIndex uint64, txBroadcastCh chan *commandspb.Transaction) *Agent {
-	signer, pubKey := wallets.NewVegaSigner(wallet, keyPairIndex, txBroadcastCh)
+	signer, pubKey := wallets.NewVegaSigner(wallet, keyPairIndex, txBroadcastCh, powStore)
 	agent := &Agent{
 		pubkey:     pubKey,
 		strategies: map[string]strats.Strategy{},
@@ -85,8 +85,8 @@ func (agent *Agent) UpdateLiquidityCommitment(strat strats.Strategy) {
 	}
 }
 
-func (a *Agent) RunStrategies() {
+func (a *Agent) RunStrategies(metricsCh chan *metrics.MetricsState) {
 	for _, strat := range maps.Values(a.strategies) {
-		go strat.RunStrategy()
+		go strat.RunStrategy(metricsCh)
 	}
 }

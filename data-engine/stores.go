@@ -36,7 +36,7 @@ type BinanceStore struct {
 	isStale bool
 }
 
-func newVegaStore(marketId string) *VegaStore {
+func NewVegaStore(marketId string) *VegaStore {
 	return &VegaStore{
 		marketId:                marketId,
 		assets:                  map[string]*vegapb.Asset{},
@@ -46,11 +46,17 @@ func newVegaStore(marketId string) *VegaStore {
 	}
 }
 
-func newBinanceStore(mkt string) *BinanceStore {
+func NewBinanceStore(mkt string) *BinanceStore {
 	return &BinanceStore{
 		mu:     sync.RWMutex{},
 		market: mkt,
 	}
+}
+
+func (v *VegaStore) GetMarketDataUpdateCounter() int64 {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.marketDataUpdateCounter
 }
 
 func (v *VegaStore) SetMarketId(marketId string) {

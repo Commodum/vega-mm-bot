@@ -1,7 +1,7 @@
 package pow
 
 import (
-	"math"
+	"log"
 	"sync"
 	"time"
 
@@ -18,9 +18,16 @@ type PowStore struct {
 
 func NewPowStore(pubKey string) *PowStore {
 	return &PowStore{
+		mu:     sync.RWMutex{},
 		pubKey: pubKey,
 		pows:   map[uint64][]*ProofOfWork{},
 	}
+}
+
+func (p *PowStore) GetMaxHeight() uint64 {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.maxHeight
 }
 
 func (p *PowStore) SetPows(proofs []*ProofOfWork) (n int64) {
@@ -33,38 +40,58 @@ func (p *PowStore) SetPows(proofs []*ProofOfWork) (n int64) {
 		}
 		p.pows[pow.BlockHeight] = append(p.pows[pow.BlockHeight], pow)
 		n += 1
+
+		if pow.BlockHeight > p.maxHeight {
+			p.maxHeight = pow.BlockHeight
+		}
 	}
+
 	return
 }
 
-func (p *PowStore) GetPow() *ProofOfWork {
+func (p *PowStore) GetPowWithRetry(retryInterval time.Duration, maxRetries int) (pow *ProofOfWork, ok bool) {
+	retries := 0
+
+	for !ok {
+		if retries == maxRetries {
+			return nil, false
+		}
+		log.Printf("No proofs of work available for pubkey: %v. Retrying...", p.pubKey)
+		time.Sleep(retryInterval)
+		pow, ok = p.GetPow()
+		retries += 1
+	}
+
+	return pow, ok
+}
+
+func (p *PowStore) GetPow() (pow *ProofOfWork, ok bool) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
-	var minHeight, maxHeight uint64
-	minHeight, maxHeight = math.MaxUint64, 0
+	// var minHeight, maxHeight uint64
+	// minHeight, maxHeight = math.MaxUint64, 0
 
-	for _, height := range maps.Keys(p.pows) {
-		if height < minHeight {
-			minHeight = height
-		}
-		if height > maxHeight {
-			maxHeight = height
-		}
-	}
+	// for _, height := range maps.Keys(p.pows) {
+	// 	if height < minHeight {
+	// 		minHeight = height
+	// 	}
+	// 	if height > maxHeight {
+	// 		maxHeight = height
+	// 	}
+	// }
 
-	for i := minHeight; i <= maxHeight; i++ {
+	for i := p.minHeight; i <= p.maxHeight; i++ {
 		for _, pow := range p.pows[i] {
 			if !pow.Used {
 				p.taintPoW(pow.TxId, pow.BlockHeight)
-				return pow
+				return pow, true
 			}
 		}
 	}
 
 	// If we hit here then there were no pows available...
-	time.Sleep(time.Millisecond * 100)
-	return p.GetPow()
+	return nil, false
 }
 
 func (p *PowStore) taintPoW(txId string, height uint64) {
@@ -76,13 +103,17 @@ func (p *PowStore) taintPoW(txId string, height uint64) {
 	}
 }
 
-func (p *PowStore) PrunePows(oldestHeight uint64) {
+func (p *PowStore) PrunePows(keepSinceHeight uint64) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	for _, key := range maps.Keys(p.pows) {
-		if key > oldestHeight {
-			delete(p.pows, key)
+	for _, height := range maps.Keys(p.pows) {
+		if height < keepSinceHeight {
+			delete(p.pows, height)
+		}
+
+		if p.minHeight < height {
+			p.minHeight = height + 1
 		}
 	}
 }

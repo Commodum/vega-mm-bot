@@ -1,9 +1,7 @@
 package pow
 
 import (
-	"fmt"
 	"log"
-	"math"
 	"sort"
 	"sync"
 
@@ -44,28 +42,39 @@ func newWorker() *worker {
 }
 
 func (w *worker) Init(inCh chan *coreapipb.PoWStatistic, pubkeys map[uint32]string) {
-	powStores := map[string]*PowStore{}
-	for str := range maps.Values(pubkeys) {
+	
+	// Need to get powStores from the sigers that are assigned to each agent.
+	
+	
+	// powStores := map[string]*PowStore{}
+	// for _, key := range maps.Values(pubkeys) {
+	// 	powStores[key] = &PowStore{
+	// 		mu:     sync.RWMutex{},
+	// 		pubKey: key,
+	// 		pows:   map[uint64][]*ProofOfWork{},
+	// 	}
+	// }
 
-	}
+}
 
+func (w *worker) setPowStats(stats *coreapipb.PoWStatistic) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.powStats = stats
 }
 
 func (w *worker) Start() {
 
-	// Get PoW Statistics
+	// Receive PoW Statistics and generate proofs
 	go func() {
-		for stat := range w.inCh {
-
+		for stats := range w.inCh {
+			w.UpdatePows(stats)
 		}
 	}()
-
 }
 
 func (w *worker) UpdatePows(stats *coreapipb.PoWStatistic) {
 
-	coreapipb.SpamStatistics
-	coreapipb.PoWBlockState
 	blockStates := stats.GetBlockStates()
 	numPastBlocks := stats.GetNumberOfPastBlocks()
 
@@ -92,145 +101,89 @@ func (w *worker) UpdatePows(stats *coreapipb.PoWStatistic) {
 	}
 	log.Printf("Heights after drop: %v", heights)
 
-	for _, pubkey := range maps.Values(w.pubkeys) {
-		// Check current PoWs for pubkey (No lock because it's a write once read many map)
-		w.signers[pubkey]
-
+	// Check max height for current PoWs
+	var mostRecentStoreHeight uint64
+	w.mu.RLock()
+	pubkeys := maps.Keys(w.stores)
+	for _, pubkey := range pubkeys {
+		maxHeight := w.stores[pubkey].GetMaxHeight()
+		if mostRecentStoreHeight < maxHeight {
+			mostRecentStoreHeight = maxHeight
+		}
 	}
+	w.mu.RUnlock()
+
+	w.GeneratePows(blockStates, pubkeys, mostRecentStoreHeight)
+
+	w.PrunePowStores(blockStates[0].BlockHeight)
 
 }
 
-func (w *worker) GeneratePow() {
+// Generates two proofs of work for each pubkey at each height. If an agent will be submitting
+// two or more transactions per block the this will need a rafactor to generate proofs
+// of a higher difficulty.
+func (w *worker) GeneratePows(blockStates []*coreapipb.PoWBlockState, pubkeys []string, mostRecentStoreHeight uint64) {
 
-	// We're going to generate PoWs for blocks in the most recent spam statistics result
+	numProofsPerBlock := 2
 
-	// Get pow statsitics from store
-
-	w.mu.Lock()
-	if w.lastBlock == nil {
-		return
-	}
-	lb := *w.lastBlock
-	w.lastBlock.NumGeneratePowCalls++
-	if _, ok := w.powMap[lb.Height]; !ok {
-		w.powMap[lb.Height] = []*ProofOfWork{}
+	type powBuffer struct {
+		mu    sync.RWMutex
+		slice []*ProofOfWork
 	}
 
-	// numPow := len(w.powMap[lb.Height])
-	// numPow := 0
-	// for _, pow := range w.powMap[lb.Height] {
-	// 	if !pow.used {
-	// 		numPow++
-	// 	}
-	// }
-	// fmt.Printf("NumPow: %v\n", numPow)
-	// if numPow == 0 {
-	// }
-
-	wg := sync.WaitGroup{}
-	total := uint32(5)
-	n := lb.NumGeneratePowCalls * total
-	for i := n; i < n+total; i++ {
-		// log.Printf("Generating proof at index %v at height %v\n", i, lb.Height)
-		wg.Add(1)
-		go func(i uint32) {
-			// Get difficulty and adjust based on number of proofs for this block
-			difficulty := uint(lb.SpamPowDifficulty + uint32(math.Floor(float64(i/lb.SpamPowNumTxPerBlock))))
-			// log.Printf("Generating proof at index %v, with difficulty %v, at height %v\n", i, difficulty, lb.Height)
-			txId, _ := uuid.NewRandom()
-			nonce, _, _ := crypto.PoW(lb.Hash, txId.String(), difficulty, lb.SpamPowHashFunction)
-			pow := &proofOfWork{
-				blockHash:   lb.Hash,
-				blockHeight: lb.Height,
-				difficulty:  difficulty,
-				nonce:       nonce,
-				txId:        txId.String(),
-				used:        false,
+	for _, pubkey := range pubkeys {
+		go func(pubkey string) {
+			wg := sync.WaitGroup{}
+			buf := &powBuffer{
+				mu:    sync.RWMutex{},
+				slice: []*ProofOfWork{},
 			}
 
+			for _, blockState := range blockStates {
+				if blockState.BlockHeight <= mostRecentStoreHeight {
+					continue
+				}
+				wg.Add(1)
+				go func(blockState *coreapipb.PoWBlockState, buf *powBuffer) {
+					for i := 0; i < numProofsPerBlock; i++ {
+						//difficulty := uint(blockState.Difficulty + uint64(math.Floor(float64(i/lb.SpamPowNumTxPerBlock))))
+						difficulty := uint(blockState.Difficulty)
+						// log.Printf("Generating proof at index %v, with difficulty %v, at height %v\n", i, difficulty, lb.Height)
+						txId, _ := uuid.NewRandom()
+						nonce, _, _ := crypto.PoW(blockState.BlockHash, txId.String(), difficulty, blockState.HashFunction)
+						pow := &ProofOfWork{
+							BlockHash:   blockState.BlockHash,
+							BlockHeight: blockState.BlockHeight,
+							Difficulty:  difficulty,
+							Nonce:       nonce,
+							TxId:        txId.String(),
+							Used:        false,
+						}
+
+						buf.mu.Lock()
+						buf.slice = append(buf.slice, pow)
+						buf.mu.Unlock()
+					}
+
+					wg.Done()
+				}(blockState, buf)
+			}
+
+			wg.Wait()
+
+			// Flush powBuffer
 			w.mu.Lock()
-			w.powMap[lb.Height] = append(w.powMap[lb.Height], pow)
+			w.stores[pubkey].SetPows(buf.slice)
 			w.mu.Unlock()
-			wg.Done()
-		}(i)
+		}(pubkey)
 	}
-	w.mu.Unlock()
-	wg.Wait()
-	fmt.Printf("Calculated %v proofs of work for block with height %v and indexes %v - %v\n", total, lb.Height, n, n+total-1)
 
 }
 
-func (w *worker) RemoveOldPow() {
+func (w *worker) PrunePowStores(keepHeight uint64) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-
-	if w.lastBlock == nil {
-		return
+	for _, store := range maps.Values(w.stores) {
+		store.PrunePows(keepHeight)
 	}
-
-	// log.Printf("numPastBlocks: %v\n", w.lastBlock.SpamPowNumPastBlocks)
-	// log.Printf("numPastBlocks * keepFraction: %v\n", float64(w.lastBlock.SpamPowNumPastBlocks)*w.blockKeepFraction)
-	// log.Printf("floor(numPastBlocks * keepFraction): %v\n", math.Floor(float64(w.lastBlock.SpamPowNumPastBlocks)*w.blockKeepFraction))
-
-	minKeepHeight := w.lastBlock.Height - uint64(math.Floor(float64(w.lastBlock.SpamPowNumPastBlocks)*w.blockKeepFraction))
-	log.Printf("MinKeepHeight: %v\n", minKeepHeight)
-	for height := range w.powMap {
-		if height < minKeepHeight {
-			log.Printf("Deleting old proofs of work for height: %v\n", height)
-			delete(w.powMap, height)
-		}
-	}
-}
-
-func (w *worker) TaintPow(txId string, height uint64) {
-	// w.mu.RLock()
-	// defer w.mu.RUnlock()
-
-	for _, pow := range w.powMap[height] {
-		if pow.txId == txId {
-			pow.used = true
-			return
-		}
-	}
-}
-
-func (w *worker) GetPow() *proofOfWork {
-
-	// w.mu.RLock()
-	powSlice := []*proofOfWork{}
-	for _, pows := range w.powMap {
-		for _, pow := range pows {
-			if !pow.used {
-				powSlice = append(powSlice, pow)
-			}
-		}
-	}
-	// w.mu.RUnlock()
-
-	sort.Slice(powSlice, func(i, j int) bool {
-		if powSlice[i].blockHeight == powSlice[j].blockHeight {
-			return powSlice[i].difficulty < powSlice[j].difficulty
-		}
-		return powSlice[i].blockHeight < powSlice[i].blockHeight
-	})
-
-	availableProofs := len(powSlice)
-
-	fmt.Printf("Total proofs remaining: %v\n", availableProofs)
-
-	if availableProofs == 0 {
-		// If this happens we could either wait for more or generate some more.
-		log.Printf("No proofs of work available. Generating more...\n")
-		// log.Printf("No proofs of work available... Waiting...\n")
-		w.mu.Unlock()
-		w.GeneratePow()
-		// time.Sleep(time.Millisecond * 500)
-		w.mu.Lock()
-		return w.GetPow()
-	}
-
-	pow := powSlice[0]
-	w.TaintPow(pow.txId, pow.blockHeight)
-	// log.Printf("Using proof with txid %v height %v and difficulty %v\n", pow.txId, pow.blockHeight, pow.difficulty)
-	return pow
 }
