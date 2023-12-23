@@ -3,7 +3,7 @@ package trading
 import (
 	"log"
 	"vega-mm/metrics"
-	"vega-mm/pow"
+	// "vega-mm/pow"
 	"vega-mm/strategies"
 	"vega-mm/wallets"
 

@@ -27,7 +27,7 @@ type MetricsState struct {
 	TimeSinceMarketDataUpdate int
 }
 
-// Add metrics for data updates and streams
+// The PromMetrics struct will contain all prom metrics available for registering
 type PromMetrics struct {
 	SignedExposure            prom.Gauge
 	VegaBestBid               prom.Gauge
@@ -38,6 +38,16 @@ type PromMetrics struct {
 	CumulativeOrderCount      prom.Counter
 	MarketDataUpdateCount     prom.Gauge
 	TimeSinceMarketDataUpdate prom.Gauge
+
+	// SignedExposure            *prom.GaugeVec
+	// VegaBestBid               *prom.GaugeVec
+	// OurBestBid                *prom.GaugeVec
+	// VegaBestAsk               *prom.GaugeVec
+	// OurBestAsk                *prom.GaugeVec
+	// LiveOrderCount            *prom.GaugeVec
+	// CumulativeOrderCount      *prom.CounterVec
+	// MarketDataUpdateCount     *prom.GaugeVec
+	// TimeSinceMarketDataUpdate *prom.GaugeVec
 }
 
 type PromMetricVectors struct {
@@ -50,6 +60,99 @@ type PromMetricVectors struct {
 	CumulativeOrderCount      *prom.CounterVec
 	MarketDataUpdateCount     *prom.GaugeVec
 	TimeSinceMarketDataUpdate *prom.GaugeVec
+}
+
+type MetricsEventType int
+
+const (
+	MetricsEventType_Unspecified MetricsEventType = iota
+	MetricsEventType_Agent
+	MetricsEventType_DataEngine
+	MetricsEventType_TradingEngine
+	MetricsEventType_Pow
+)
+
+func (m MetricsEventType) String() string {
+	switch m {
+	case 0:
+		return "MetricsEventType_Unspecified"
+	case 1:
+		return "MetricsEventType_Agent"
+	case 2:
+		return "MetricsEventType_DataEngine"
+	case 3:
+		return "MetricsEventType_TradingEngine"
+	default:
+		return "MetricsEventType_Pow"
+	}
+}
+
+type MetricsEventData interface {
+	isMetricsData()
+}
+
+func (m *AgentMetrics) isMetricsData()         {}
+func (m *DataEngineMetrics) isMetricsData()    {}
+func (m *TradingEngineMetrics) isMetricsData() {}
+func (m *PowMetrics) isMetricsData()           {}
+
+type AgentMetrics struct{}
+type DataEngineMetrics struct{}
+type TradingEngineMetrics struct{}
+type PowMetrics struct{}
+
+type MetricsEvent struct {
+	Type MetricsEventType
+	Data MetricsEventData
+}
+
+func (m *MetricsEvent) GetType() MetricsEventType {
+	return m.Type
+}
+
+func (m *MetricsEvent) GetData() MetricsEventData {
+	return m.Data
+}
+
+func (m *MetricsEvent) HandleData(promMetrics *PromMetrics) {
+
+	evtType := m.GetType()
+	data := m.GetData()
+
+	switch evtType {
+	case MetricsEventType_Agent:
+		data = data.(*AgentMetrics)
+		// promMetrics.SignedExposure.Set(0.5)
+	case MetricsEventType_DataEngine:
+		data = data.(*DataEngineMetrics)
+
+	case MetricsEventType_TradingEngine:
+		data = data.(*TradingEngineMetrics)
+
+	case MetricsEventType_Pow:
+		data = data.(*PowMetrics)
+
+	default:
+		log.Printf("Unknown Metrics Event Type received: %v", evtType.String())
+	}
+}
+
+type MetricsServer struct {
+	Port string
+	inCh chan *MetricsEvent
+}
+
+func NewMetricsServer(port string) *MetricsServer {
+	return &MetricsServer{
+		Port: port,
+		inCh: make(chan *MetricsEvent),
+	}
+}
+
+func (m *MetricsServer) Init() chan *MetricsEvent {
+	// Registers Prom Metrics with a registry
+
+	return m.inCh
 }
 
 func StartMetricsApi(metricsCh chan *MetricsState) {

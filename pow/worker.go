@@ -42,10 +42,9 @@ func newWorker() *worker {
 }
 
 func (w *worker) Init(inCh chan *coreapipb.PoWStatistic, pubkeys map[uint32]string) {
-	
+
 	// Need to get powStores from the sigers that are assigned to each agent.
-	
-	
+
 	// powStores := map[string]*PowStore{}
 	// for _, key := range maps.Values(pubkeys) {
 	// 	powStores[key] = &PowStore{
@@ -99,7 +98,16 @@ func (w *worker) UpdatePows(stats *coreapipb.PoWStatistic) {
 	for i := 0; i < len(blockStates); i++ {
 		heights = append(heights, blockStates[i].BlockHeight)
 	}
-	log.Printf("Heights after drop: %v", heights)
+	log.Printf("Heights after keepBlockFraction drop: %v", heights)
+
+	// Drop blocks with seenTransactions != 0
+	for i := len(blockStates) - 1; i >= 0; i-- {
+		if blockStates[i].TransactionsSeen != 0 {
+			copy(blockStates[i-1:], blockStates[i:])
+			blockStates = blockStates[:len(blockStates)-1]
+		}
+	}
+	log.Printf("Heights after seenTransactions drop: %v", heights)
 
 	// Check max height for current PoWs
 	var mostRecentStoreHeight uint64

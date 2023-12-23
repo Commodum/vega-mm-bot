@@ -3,20 +3,17 @@ package main
 import (
 	"flag"
 	"fmt"
+	"vega-mm/metrics"
 
-	// "io"
 	"log"
 	"os"
 	"os/signal"
 	"sync"
 	"syscall"
-	// "time"
-	// wallet "github.com/jeremyletang/vega-go-sdk/wallet"
 	// "net/http"
 	// _ "net/http/pprof"
 )
 
-// Note: Below values configured for Fairground
 const (
 	defaultAdminPort = 8888
 
@@ -55,6 +52,37 @@ func init() {
 	flag.StringVar(&walletServiceAddr, "wallet-service-addr", defaultWalletServiceAddr, "A vega wallet service address")
 	flag.StringVar(&walletPubkey, "wallet-pubkey", defaultWalletPubkey, "a vega public key")
 	flag.StringVar(&binanceMarkets, "binance-markets", defaultBinanceMarkets, "a comma separated list of Binance markets")
+
+	port := 
+	metricsServer := metrics.NewMetricsServer()
+	metricsCh := metricsServer.Init()
+
+	// In Init, we want to initialize all the separate engines in the tradying system.
+	// Init the metrics server.
+	//	- Create channel metrics.
+	//	- Register prom metrics with registry.
+	//
+	// Create strategy definitions
+	//	- Hardcoded strategy options.
+	//	- Creates a data store for each strategy.
+	//
+	// Init Trading Engine to register the strategies
+	//	- Instantiates agents, deriving corresponding key pairs
+	// 	- Registers strategies with agents
+	// 	- Should then wait for data streams and proofs of work
+	//
+	// Init data engine.
+	//	- Pass API endpoints from config.
+	//	- Registers strategies with the Data Engine.
+	//	- Stores pointers to data store for each strategy.
+	//	- Opens API conns and streams.
+	//	- Filters streams and directs data to corresponding strategy data stores.
+	//
+	// Init proof of work worker
+	// 	- Register agents with worker.
+	//	- Start receiving spam statistics events from data engine.
+	//
+
 }
 
 func main() {
