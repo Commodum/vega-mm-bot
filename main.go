@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"vega-mm/metrics"
+	strats "vega-mm/strategies"
 
 	"log"
 	"os"
@@ -43,6 +44,11 @@ var (
 	binanceMarkets    string
 )
 
+func NewStrategies() []*strats.Strategy {
+
+	return nil
+}
+
 func init() {
 	fmt.Println("Initializing..")
 	flag.UintVar(&adminPort, "admin-port", defaultAdminPort, "The port for the Admin API")
@@ -53,14 +59,16 @@ func init() {
 	flag.StringVar(&walletPubkey, "wallet-pubkey", defaultWalletPubkey, "a vega public key")
 	flag.StringVar(&binanceMarkets, "binance-markets", defaultBinanceMarkets, "a comma separated list of Binance markets")
 
-	port := 
-	metricsServer := metrics.NewMetricsServer()
+	port := ":8080"
+	metricsServer := metrics.NewMetricsServer(port)
 	metricsCh := metricsServer.Init()
+
+	strategies := NewStrategies()
 
 	// In Init, we want to initialize all the separate engines in the tradying system.
 	// Init the metrics server.
-	//	- Create channel metrics.
 	//	- Register prom metrics with registry.
+	//	- Return metrics channel.
 	//
 	// Create strategy definitions
 	//	- Hardcoded strategy options.
