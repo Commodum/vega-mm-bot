@@ -24,25 +24,29 @@ type VegaKeyPair struct {
 	privKey string
 }
 
-type EmbeddedWallet struct {
+func (v *VegaKeyPair) PubKey() string {
+	return v.pubKey
+}
+
+type EmbeddedVegaWallet struct {
 	seed []byte
 	keys map[uint64]*VegaKeyPair
 }
 
-func NewWallet(mnemonic string) *EmbeddedWallet {
+func NewWallet(mnemonic string) *EmbeddedVegaWallet {
 	if len(mnemonic) == 0 {
 		log.Fatalf("Invalid mnemonic provided...")
 	}
 
 	sanitizedMnemonic := strings.Join(strings.Fields(mnemonic), " ")
 	seed := bip39.NewSeed(sanitizedMnemonic, "")
-	ew := &EmbeddedWallet{
+	ew := &EmbeddedVegaWallet{
 		seed: seed,
 		keys: map[uint64]*VegaKeyPair{},
 	}
 
 	// Derive first key pair
-	ew.getKeyPair(1)
+	ew.GetKeyPair(1)
 
 	return ew
 
@@ -57,7 +61,7 @@ func NewWallet(mnemonic string) *EmbeddedWallet {
 	// }
 }
 
-func (w *EmbeddedWallet) getKeyPair(index uint64) *VegaKeyPair {
+func (w *EmbeddedVegaWallet) GetKeyPair(index uint64) *VegaKeyPair {
 	if kp, ok := w.keys[index]; ok {
 		return kp
 	}
@@ -80,7 +84,7 @@ func (w *EmbeddedWallet) getKeyPair(index uint64) *VegaKeyPair {
 	return w.keys[index]
 }
 
-func (w *EmbeddedWallet) getKeyPairByPublicKey(pubKey string) (*VegaKeyPair, error) {
+func (w *EmbeddedVegaWallet) getKeyPairByPublicKey(pubKey string) (*VegaKeyPair, error) {
 	pubKey = strings.ToLower(pubKey)
 	for _, keyPair := range w.keys {
 		if keyPair.pubKey == pubKey {
@@ -115,8 +119,7 @@ func (s *VegaSigner) GetOutChan() chan *commandspb.Transaction {
 	return s.txOutCh
 }
 
-func NewVegaSigner(w *EmbeddedWallet, idx uint64, txBroadcastCh chan *commandspb.Transaction) (signer *VegaSigner, pubkey string) {
-	keyPair := w.getKeyPair(idx)
+func NewVegaSigner(keyPair *VegaKeyPair, txBroadcastCh chan *commandspb.Transaction) (signer *VegaSigner) {
 	return &VegaSigner{
 		mu: sync.RWMutex{},
 
@@ -125,7 +128,7 @@ func NewVegaSigner(w *EmbeddedWallet, idx uint64, txBroadcastCh chan *commandspb
 
 		keypair:  keyPair,
 		powStore: pow.NewPowStore(keyPair.pubKey),
-	}, keyPair.pubKey
+	}
 }
 
 func (s *VegaSigner) SignInputData(bundledInputData []byte) string {
@@ -139,11 +142,23 @@ func (s *VegaSigner) SignInputData(bundledInputData []byte) string {
 	return hex.EncodeToString(sig)
 }
 
-func (s *VegaSigner) BuildTx(inputData *commandspb.InputData) *commandspb.Transaction {
+func (s *VegaSigner) StartFetchLoop() {
+	for inputData := range s.GetInChan() {
+		s.BuildAndSendTx(inputData)
+	}
+}
+
+func (s *VegaSigner) BuildAndSendTx(inputData *commandspb.InputData) {
 	fmt.Printf("Building Tx...\n")
 	keyPair := s.keypair
 	chainId := s.getChainId()
-	pow := s.powStore.GetPow()
+
+	// We could do some retries here instead...
+	pow, ok := s.powStore.GetPow()
+	if !ok {
+		log.Printf("Proof of work not available for pubkey: %v, dropping tx.", s.keypair.pubKey)
+		return
+	}
 
 	inputData.BlockHeight = pow.BlockHeight
 	inputData.Nonce = rand.Uint64()
@@ -162,7 +177,7 @@ func (s *VegaSigner) BuildTx(inputData *commandspb.InputData) *commandspb.Transa
 	proofOfWork := &commandspb.ProofOfWork{
 		Tid: pow.TxId, Nonce: pow.Nonce,
 	}
-	return &commandspb.Transaction{
+	s.GetOutChan() <- &commandspb.Transaction{
 		Version:   commandspb.TxVersion_TX_VERSION_V3,
 		Signature: signature,
 		Pow:       proofOfWork,
@@ -170,6 +185,41 @@ func (s *VegaSigner) BuildTx(inputData *commandspb.InputData) *commandspb.Transa
 		From:      &commandspb.Transaction_PubKey{PubKey: keyPair.pubKey},
 	}
 }
+
+// func (s *VegaSigner) BuildTx(inputData *commandspb.InputData) *commandspb.Transaction {
+// 	fmt.Printf("Building Tx...\n")
+// 	keyPair := s.keypair
+// 	chainId := s.getChainId()
+// 	pow, ok := s.powStore.GetPow()
+// 	if !ok {
+
+// 	}
+
+// 	inputData.BlockHeight = pow.BlockHeight
+// 	inputData.Nonce = rand.Uint64()
+// 	inputDataBytes, err := proto.Marshal(inputData)
+// 	if err != nil {
+// 		log.Fatalf("Failed to marshal inputData into bytes: %v", err)
+// 	}
+// 	bundledInputData := bytes.Join([][]byte{[]byte(chainId), inputDataBytes}, []byte{0x0})
+// 	hexSig := s.SignInputData(bundledInputData)
+// 	log.Printf("Signed input data with keypair with pubkey: %v", keyPair.pubKey)
+// 	signature := &commandspb.Signature{
+// 		Value:   hexSig,
+// 		Algo:    "vega/ed25519",
+// 		Version: 1,
+// 	}
+// 	proofOfWork := &commandspb.ProofOfWork{
+// 		Tid: pow.TxId, Nonce: pow.Nonce,
+// 	}
+// 	return &commandspb.Transaction{
+// 		Version:   commandspb.TxVersion_TX_VERSION_V3,
+// 		Signature: signature,
+// 		Pow:       proofOfWork,
+// 		InputData: inputDataBytes,
+// 		From:      &commandspb.Transaction_PubKey{PubKey: keyPair.pubKey},
+// 	}
+// }
 
 func (s *VegaSigner) SubmitTx(tx *commandspb.Transaction) {
 	s.txOutCh <- tx

@@ -2,6 +2,7 @@ package pow
 
 import (
 	"log"
+	"math"
 	"sort"
 	"sync"
 
@@ -18,9 +19,10 @@ type worker struct {
 
 	inCh chan *coreapipb.PoWStatistic
 
-	powStats          *coreapipb.PoWStatistic
-	pubkeys           map[uint32]string
-	blockKeepFraction float64
+	powStats           *coreapipb.PoWStatistic
+	pubkeys            map[uint32]string
+	numStratsPerPubkey map[string]int
+	blockKeepFraction  float64
 
 	stores map[string]*PowStore
 }
@@ -41,7 +43,7 @@ func newWorker() *worker {
 	}
 }
 
-func (w *worker) Init(inCh chan *coreapipb.PoWStatistic, pubkeys map[uint32]string) {
+func (w *worker) Init(inCh chan *coreapipb.PoWStatistic, pubkeys map[uint32]string, numStratsPerPubkey map[string]uint32) {
 
 	// Need to get powStores from the sigers that are assigned to each agent.
 
@@ -74,6 +76,13 @@ func (w *worker) Start() {
 
 func (w *worker) UpdatePows(stats *coreapipb.PoWStatistic) {
 
+	// If this is the first PoWStatistic we are receiving since startup we must
+	// track the most recent height for which it is valid and truncate all
+	// subsequent PoWStatistic responses such that their min height is greater
+	// than the max height of the first response. This ensures we do not accidentally
+	// breach the pow spam rules. This is necessary because we only query one set of
+	// spam statistics and not one set for each pubkey.
+
 	blockStates := stats.GetBlockStates()
 	numPastBlocks := stats.GetNumberOfPastBlocks()
 
@@ -101,13 +110,17 @@ func (w *worker) UpdatePows(stats *coreapipb.PoWStatistic) {
 	log.Printf("Heights after keepBlockFraction drop: %v", heights)
 
 	// Drop blocks with seenTransactions != 0
-	for i := len(blockStates) - 1; i >= 0; i-- {
-		if blockStates[i].TransactionsSeen != 0 {
-			copy(blockStates[i-1:], blockStates[i:])
-			blockStates = blockStates[:len(blockStates)-1]
-		}
-	}
-	log.Printf("Heights after seenTransactions drop: %v", heights)
+	// Note: This will not work, only works when we query one set of
+	// 		 spam statistics for each public key. Because we are
+	//		 sharing one spam statistics response between all keys
+	//		 we cannot make use of the "TransactionsSeen" field.
+	// for i := len(blockStates) - 1; i >= 0; i-- {
+	// 	if blockStates[i].TransactionsSeen != 0 {
+	// 		copy(blockStates[i-1:], blockStates[i:])
+	// 		blockStates = blockStates[:len(blockStates)-1]
+	// 	}
+	// }
+	// log.Printf("Heights after seenTransactions drop: %v", heights)
 
 	// Check max height for current PoWs
 	var mostRecentStoreHeight uint64
@@ -132,7 +145,7 @@ func (w *worker) UpdatePows(stats *coreapipb.PoWStatistic) {
 // of a higher difficulty.
 func (w *worker) GeneratePows(blockStates []*coreapipb.PoWBlockState, pubkeys []string, mostRecentStoreHeight uint64) {
 
-	numProofsPerBlock := 2
+	numProofsPerStrat := 2
 
 	type powBuffer struct {
 		mu    sync.RWMutex
@@ -140,7 +153,8 @@ func (w *worker) GeneratePows(blockStates []*coreapipb.PoWBlockState, pubkeys []
 	}
 
 	for _, pubkey := range pubkeys {
-		go func(pubkey string) {
+		numStrats := w.numStratsPerPubkey[pubkey]
+		go func(pubkey string, numStrats int) {
 			wg := sync.WaitGroup{}
 			buf := &powBuffer{
 				mu:    sync.RWMutex{},
@@ -153,9 +167,10 @@ func (w *worker) GeneratePows(blockStates []*coreapipb.PoWBlockState, pubkeys []
 				}
 				wg.Add(1)
 				go func(blockState *coreapipb.PoWBlockState, buf *powBuffer) {
-					for i := 0; i < numProofsPerBlock; i++ {
+					for i := 0; i < numProofsPerStrat*int(numStrats); i++ {
 						//difficulty := uint(blockState.Difficulty + uint64(math.Floor(float64(i/lb.SpamPowNumTxPerBlock))))
-						difficulty := uint(blockState.Difficulty)
+						difficulty := uint(blockState.Difficulty + uint64(math.Floor(float64(i/int(blockState.TxPerBlock)))))
+						// difficulty := uint(blockState.Difficulty)
 						// log.Printf("Generating proof at index %v, with difficulty %v, at height %v\n", i, difficulty, lb.Height)
 						txId, _ := uuid.NewRandom()
 						nonce, _, _ := crypto.PoW(blockState.BlockHash, txId.String(), difficulty, blockState.HashFunction)
@@ -183,7 +198,7 @@ func (w *worker) GeneratePows(blockStates []*coreapipb.PoWBlockState, pubkeys []
 			w.mu.Lock()
 			w.stores[pubkey].SetPows(buf.slice)
 			w.mu.Unlock()
-		}(pubkey)
+		}(pubkey, numStrats)
 	}
 
 }

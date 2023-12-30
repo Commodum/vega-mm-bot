@@ -42,7 +42,7 @@ import (
 type OldStrategyOpts struct {
 	marketId                string
 	binanceMarket           string
-	usesLiquidityCommitment bool
+	UsesLiquidityCommitment bool
 	targetObligationVolume  int64
 	maxProbabilityOfTrading float64
 	orderSpacing            float64
@@ -52,12 +52,13 @@ type OldStrategyOpts struct {
 }
 
 type GeneralOpts struct {
-	vegaMarketId            string
-	binanceMarket           string
-	numOrdersPerSide        int
-	usesLiquidityCommitment bool
-	targetObligationVolume  decimal.Decimal
-	targetVolCoefficient    decimal.Decimal
+	AgentKeyPairIdx        uint64
+	VegaMarketId           string
+	BinanceMarket          string
+	NumOrdersPerSide       int
+	LiquidityCommitment    bool
+	TargetObligationVolume decimal.Decimal
+	TargetVolCoefficient   decimal.Decimal
 }
 
 type OptsType interface {
@@ -71,14 +72,14 @@ type OtherOpts struct {
 type Martingale *MartingaleOpts
 
 type MartingaleOpts struct {
-	maxProbabilityOfTrading decimal.Decimal
-	orderSpacing            decimal.Decimal
-	orderSizeBase           decimal.Decimal
+	MaxProbabilityOfTrading decimal.Decimal
+	OrderSpacing            decimal.Decimal
+	OrderSizeBase           decimal.Decimal
 }
 
 type StrategyOpts[T OptsType] struct {
-	general  *GeneralOpts
-	specific T
+	General  *GeneralOpts
+	Specific T
 }
 
 type syncPubKeyBalance struct {
@@ -116,6 +117,8 @@ type StrategyMetrics struct {
 type Strategy interface {
 	SetTxDataChan(chan *commandspb.InputData)
 
+	GetAgentKeyPairIndex() uint64
+
 	GetVegaMarketId() string
 	GetBinanceMarketTicker() string
 
@@ -138,7 +141,7 @@ type Strategy interface {
 
 	GetOurBestBidAndAsk([]*vegapb.Order) (decimal.Decimal, decimal.Decimal)
 
-	GetOrderSubmission(decimal.Decimal, decimal.Decimal, decimal.Decimal, decimal.Decimal, vegapb.Side, *vegapb.LogNormalRiskModel, *vegapb.LiquiditySLAParameters) []*commandspb.OrderSubmission
+	GetOrderSubmission(decimal.Decimal, decimal.Decimal, decimal.Decimal, decimal.Decimal, decimal.Decimal, decimal.Decimal, vegapb.Side, *vegapb.LogNormalRiskModel, *vegapb.LiquiditySLAParameters) []*commandspb.OrderSubmission
 
 	// GetRiskMetricsForMarket(*vegapb.Market) (something... something... something...)
 
@@ -156,10 +159,10 @@ type decimals struct {
 // func NewStrategy(opts *StrategyOpts) *strategy {
 func NewMartingaleStrategy(opts *StrategyOpts[Martingale]) *MartingaleStrategy {
 	return &MartingaleStrategy{
-		GeneralOpts:    opts.general,
-		MartingaleOpts: opts.specific,
-		vegaStore:      data.NewVegaStore(opts.general.vegaMarketId),
-		binanceStore:   data.NewBinanceStore(opts.general.binanceMarket),
+		GeneralOpts:    opts.General,
+		MartingaleOpts: opts.Specific,
+		vegaStore:      data.NewVegaStore(opts.General.VegaMarketId),
+		binanceStore:   data.NewBinanceStore(opts.General.BinanceMarket),
 	}
 }
 
@@ -167,12 +170,16 @@ func (strat *MartingaleStrategy) SetTxDataChan(ch chan *commandspb.InputData) {
 	strat.txDataCh = ch
 }
 
+func (strat *MartingaleStrategy) GetAgentKeyPairIndex() uint64 {
+	return strat.AgentKeyPairIdx
+}
+
 func (strat *MartingaleStrategy) GetVegaMarketId() string {
-	return strat.vegaMarketId
+	return strat.VegaMarketId
 }
 
 func (strat *MartingaleStrategy) GetBinanceMarketTicker() string {
-	return strat.binanceMarket
+	return strat.BinanceMarket
 }
 
 func (strat *MartingaleStrategy) GetVegaStore() *data.VegaStore {
@@ -196,11 +203,11 @@ func (strat *MartingaleStrategy) GetVegaDecimals() *decimals {
 }
 
 func (strat *MartingaleStrategy) UsesLiquidityCommitment() bool {
-	return strat.usesLiquidityCommitment
+	return strat.LiquidityCommitment
 }
 
 func (strat *MartingaleStrategy) GetTargetObligationVolume() decimal.Decimal {
-	return strat.targetObligationVolume
+	return strat.TargetObligationVolume
 }
 
 func (strat *MartingaleStrategy) SubmitLiquidityCommitment() {
@@ -214,8 +221,8 @@ func (strat *MartingaleStrategy) SubmitLiquidityCommitment() {
 
 		// Create LP submission
 		lpSubmission := &commandspb.LiquidityProvisionSubmission{
-			MarketId:         strat.vegaMarketId,
-			CommitmentAmount: strat.targetObligationVolume.Mul(strat.d.assetFactor).Div(stakeToCcyVolume).BigInt().String(), // Divide by stakeToCcyVolume to get "commitmentAmount"
+			MarketId:         strat.VegaMarketId,
+			CommitmentAmount: strat.TargetObligationVolume.Mul(strat.d.assetFactor).Div(stakeToCcyVolume).BigInt().String(), // Divide by stakeToCcyVolume to get "commitmentAmount"
 			Fee:              "0.0001",
 			Reference:        "Opportunities don't happen, you create them.",
 		}
@@ -229,7 +236,7 @@ func (strat *MartingaleStrategy) SubmitLiquidityCommitment() {
 
 		strat.txDataCh <- inputData
 
-		log.Printf("Market: %v. Sent LP Submission tx data for signing.", strat.binanceMarket)
+		log.Printf("Market: %v. Sent LP Submission tx data for signing.", strat.BinanceMarket)
 
 		// tx := strat.agent.signer.BuildTx(strat.agent.pubkey, inputData)
 
@@ -250,8 +257,8 @@ func (strat *MartingaleStrategy) AmendLiquidityCommitment() {
 
 		// Create LP Amendment
 		lpAmendment := &commandspb.LiquidityProvisionAmendment{
-			MarketId:         strat.vegaMarketId,
-			CommitmentAmount: strat.targetObligationVolume.Mul(strat.d.assetFactor).Div(stakeToCcyVolume).BigInt().String(), // Divinde by stakeToCcyVolume
+			MarketId:         strat.VegaMarketId,
+			CommitmentAmount: strat.TargetObligationVolume.Mul(strat.d.assetFactor).Div(stakeToCcyVolume).BigInt().String(), // Divinde by stakeToCcyVolume
 			Fee:              "0.0001",
 			Reference:        "Opportunities don't happen, you create them.",
 		}
@@ -265,7 +272,7 @@ func (strat *MartingaleStrategy) AmendLiquidityCommitment() {
 
 		strat.txDataCh <- inputData
 
-		log.Printf("Market: %v. Sent LP Amendment tx data for signing.", strat.binanceMarket)
+		log.Printf("Market: %v. Sent LP Amendment tx data for signing.", strat.BinanceMarket)
 
 		// tx := strat.agent.signer.BuildTx(strat.agent.pubkey, inputData)
 
@@ -282,7 +289,7 @@ func (strat *MartingaleStrategy) CancelLiquidityCommitment() {
 
 		// Cancel LP submission
 		lpCancellation := &commandspb.LiquidityProvisionCancellation{
-			MarketId: strat.vegaMarketId,
+			MarketId: strat.VegaMarketId,
 		}
 
 		// Build and send tx
@@ -294,7 +301,7 @@ func (strat *MartingaleStrategy) CancelLiquidityCommitment() {
 
 		strat.txDataCh <- inputData
 
-		log.Printf("Market: %v. Sent LP Cancellation tx data for signing.", strat.binanceMarket)
+		log.Printf("Market: %v. Sent LP Cancellation tx data for signing.", strat.BinanceMarket)
 
 		// tx := strat.agent.signer.BuildTx(strat.agent.pubkey, inputData)
 
@@ -393,7 +400,7 @@ func (strat *MartingaleStrategy) GetOrderSubmission(binanceRefPrice, vegaRefPric
 	}
 
 	priceTriggers := strat.vegaStore.GetMarket().GetPriceMonitoringSettings().GetParameters().GetTriggers()
-	firstPrice := findPriceByProbabilityOfTrading(strat.maxProbabilityOfTrading, side, refPrice, logNormalRiskModel, priceTriggers)
+	firstPrice := findPriceByProbabilityOfTrading(strat.MaxProbabilityOfTrading, side, refPrice, logNormalRiskModel, priceTriggers)
 
 	log.Printf("Calculated price: %v, Side: %v \n", firstPrice, side)
 	log.Printf("Bid Threshold: %v\n", vegaMidPrice.Div(strat.d.priceFactor).Mul(decimal.NewFromFloat(1-(10./10000))))
@@ -428,13 +435,13 @@ func (strat *MartingaleStrategy) GetOrderSubmission(binanceRefPrice, vegaRefPric
 	// reductionAmount = decimal.NewFromInt(0)
 	reductionAmount = orderReductionAmount.Div(vegaRefPriceAdj).Mul(decimal.NewFromFloat(0.5))
 
-	totalOrderSizeUnits := (math.Pow(strat.orderSizeBase.InexactFloat64(), float64(strat.numOrdersPerSide+1)) - float64(1)) / (strat.orderSizeBase.InexactFloat64() - float64(1))
+	totalOrderSizeUnits := (math.Pow(strat.OrderSizeBase.InexactFloat64(), float64(strat.NumOrdersPerSide+1)) - float64(1)) / (strat.OrderSizeBase.InexactFloat64() - float64(1))
 	// totalOrderSizeUnits := (math.Pow(float64(2), float64(numOrders+1)) - float64(1)) / float64(2-1)
 	orders := []*commandspb.OrderSubmission{}
 
 	sizeF := func(i int) decimal.Decimal {
 
-		size := targetVolume.Div(decimal.NewFromFloat(totalOrderSizeUnits).Mul(vegaRefPriceAdj)).Mul(strat.orderSizeBase.Pow(decimal.NewFromInt(int64(i + 1))))
+		size := targetVolume.Div(decimal.NewFromFloat(totalOrderSizeUnits).Mul(vegaRefPriceAdj)).Mul(strat.OrderSizeBase.Pow(decimal.NewFromInt(int64(i + 1))))
 		adjustedSize := decimal.NewFromInt(0)
 
 		if size.LessThan(reductionAmount) {
@@ -457,13 +464,13 @@ func (strat *MartingaleStrategy) GetOrderSubmission(binanceRefPrice, vegaRefPric
 	// 	return decimal.Max(targetVolume.Div(decimal.NewFromInt(int64(numOrders)).Mul(vegaRefPrice.Div(d.priceFactor))), decimal.NewFromInt(1).Div(d.positionFactor))
 	// }
 
-	log.Printf("%v targetVol: %v, refPrice: %v", strat.binanceMarket, targetVolume, refPrice)
+	log.Printf("%v targetVol: %v, refPrice: %v", strat.BinanceMarket, targetVolume, refPrice)
 
 	priceF := func(i int) decimal.Decimal {
 
 		// TODO: Add a clamp so that the min/max price we quote will always be within the valid LP price range.
 
-		return decimal.NewFromFloat(firstPrice).Mul(decimal.NewFromInt(1).Sub(decimal.NewFromInt(int64(i)).Mul(strat.orderSpacing)).Sub(offset))
+		return decimal.NewFromFloat(firstPrice).Mul(decimal.NewFromInt(1).Sub(decimal.NewFromInt(int64(i)).Mul(strat.OrderSpacing)).Sub(offset))
 
 	}
 
@@ -473,7 +480,7 @@ func (strat *MartingaleStrategy) GetOrderSubmission(binanceRefPrice, vegaRefPric
 
 			// TODO: Add a clamp so that the min/max price we quote will always be within the valid LP price range.
 
-			return decimal.NewFromFloat(firstPrice).Mul(decimal.NewFromInt(1).Add(decimal.NewFromInt(int64(i)).Mul(strat.orderSpacing)).Add(offset))
+			return decimal.NewFromFloat(firstPrice).Mul(decimal.NewFromInt(1).Add(decimal.NewFromInt(int64(i)).Mul(strat.OrderSpacing)).Add(offset))
 		}
 
 	}
@@ -495,13 +502,13 @@ func (strat *MartingaleStrategy) GetOrderSubmission(binanceRefPrice, vegaRefPric
 	sumSize := 0.0
 	sumSizeMulProb := 0.0
 
-	for i := 0; i < strat.numOrdersPerSide; i++ {
+	for i := 0; i < strat.NumOrdersPerSide; i++ {
 
 		price := priceF(i)
 		size := sizeF(i)
 
 		orders = append(orders, &commandspb.OrderSubmission{
-			MarketId:    strat.vegaMarketId,
+			MarketId:    strat.VegaMarketId,
 			Price:       price.Mul(strat.d.priceFactor).BigInt().String(),
 			Size:        size.Mul(strat.d.positionFactor).BigInt().Uint64(),
 			Side:        side,
@@ -528,7 +535,7 @@ func (strat *MartingaleStrategy) GetOrderSubmission(binanceRefPrice, vegaRefPric
 	}
 
 	volumeWeightedLiqScore := sumSizeMulProb / sumSize
-	log.Printf("%v Side: %v, volume weighted Liquidity Score: %v", strat.binanceMarket, side, volumeWeightedLiqScore)
+	log.Printf("%v Side: %v, volume weighted Liquidity Score: %v", strat.BinanceMarket, side, volumeWeightedLiqScore)
 
 	return orders
 }
@@ -653,10 +660,10 @@ func cdf(m, stddev, x float64) float64 {
 func (strat *MartingaleStrategy) RunStrategy(metricsCh chan *metrics.MetricsState) {
 
 	for range time.NewTicker(750 * time.Millisecond).C {
-		log.Printf("Executing strategy for %v...", strat.binanceMarket)
+		log.Printf("Executing strategy for %v...", strat.BinanceMarket)
 
 		var (
-			marketId        = strat.vegaMarketId
+			marketId        = strat.VegaMarketId
 			market          = strat.vegaStore.GetMarket()
 			settlementAsset = market.GetTradableInstrument().GetInstrument().GetPerpetual().GetSettlementAsset()
 
@@ -677,8 +684,8 @@ func (strat *MartingaleStrategy) RunStrategy(metricsCh chan *metrics.MetricsStat
 			balance        = strat.GetPubkeyBalance(settlementAsset)
 			// bidVol                 = balance.Mul(strat.targetVolCoefficient)
 			// askVol                 = balance.Mul(strat.targetVolCoefficient)
-			bidVol = strat.targetObligationVolume.Mul(strat.targetVolCoefficient)
-			askVol = strat.targetObligationVolume.Mul(strat.targetVolCoefficient)
+			bidVol = strat.TargetObligationVolume.Mul(strat.TargetVolCoefficient)
+			askVol = strat.TargetObligationVolume.Mul(strat.TargetVolCoefficient)
 			// neutralityThresholds = []float64{0.005, 0.01, 0.02}
 			neutralityThresholds = []float64{0, 0.01, 0.035, 0.075}
 			neutralityOffsets    = []float64{0.0005, 0.00075, 0.00125, 0.002}
@@ -777,7 +784,7 @@ func (strat *MartingaleStrategy) RunStrategy(metricsCh chan *metrics.MetricsStat
 			// of one big order right at the front. Either that or disable this feature completely and use other neutrality
 			// strategies.
 			submissions = append(submissions, &commandspb.OrderSubmission{
-				MarketId: strat.vegaMarketId,
+				MarketId: strat.VegaMarketId,
 				// Price:       price.BigInt().String(),
 				Price:       binancePrice.Mul(strat.d.priceFactor).BigInt().String(),
 				Size:        openVol.Mul(strat.d.positionFactor).Abs().BigInt().Uint64(),
@@ -791,7 +798,7 @@ func (strat *MartingaleStrategy) RunStrategy(metricsCh chan *metrics.MetricsStat
 
 		}
 
-		cancellations = append(cancellations, &commandspb.OrderCancellation{MarketId: strat.vegaMarketId})
+		cancellations = append(cancellations, &commandspb.OrderCancellation{MarketId: strat.VegaMarketId})
 
 		submissions = append(
 			submissions,
@@ -803,7 +810,7 @@ func (strat *MartingaleStrategy) RunStrategy(metricsCh chan *metrics.MetricsStat
 
 		state := &metrics.MetricsState{
 			MarketId:              marketId,
-			BinanceTicker:         strat.binanceMarket,
+			BinanceTicker:         strat.BinanceMarket,
 			Position:              strat.vegaStore.GetPosition(),
 			SignedExposure:        signedExposure,
 			VegaBestBid:           vegaBestBid.Div(strat.d.priceFactor),
@@ -838,7 +845,7 @@ func (strat *MartingaleStrategy) RunStrategy(metricsCh chan *metrics.MetricsStat
 
 		// res := a.signer.SubmitTx(tx)
 
-		// log.Printf("%v Tx Response: %v", strat.binanceMarket, res)
+		// log.Printf("%v Tx Response: %v", strat.BinanceMarket, res)
 
 	}
 

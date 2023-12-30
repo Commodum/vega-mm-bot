@@ -23,10 +23,11 @@ type Agent struct {
 	// metricsCh  chan *MetricsState
 }
 
-func NewAgent(wallet *wallets.EmbeddedWallet, keyPairIndex uint64, txBroadcastCh chan *commandspb.Transaction) *Agent {
-	signer, pubKey := wallets.NewVegaSigner(wallet, keyPairIndex, txBroadcastCh, powStore)
+// func NewAgent(wallet *wallets.EmbeddedVegaWallet, keyPairIndex uint64, txBroadcastCh chan *commandspb.Transaction) *Agent {
+func NewAgent(keyPair *wallets.VegaKeyPair, txBroadcastCh chan *commandspb.Transaction) *Agent {
+	signer := wallets.NewVegaSigner(keyPair, txBroadcastCh)
 	agent := &Agent{
-		pubkey:     pubKey,
+		pubkey:     keyPair.PubKey(),
 		strategies: map[string]strats.Strategy{},
 
 		// We need to get the gRPC addresses to the clients
@@ -38,7 +39,7 @@ func NewAgent(wallet *wallets.EmbeddedWallet, keyPairIndex uint64, txBroadcastCh
 	return agent
 }
 
-// Adds the strategy to the agents internal map an
+// Adds the strategy to the agents internal map
 func (a *Agent) RegisterStrategy(strat strats.Strategy) {
 
 	vegaMarket := strat.GetVegaMarketId()

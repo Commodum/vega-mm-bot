@@ -1,6 +1,16 @@
 package trading
 
-import "sync"
+import (
+	"fmt"
+	"log"
+	"os"
+	"sync"
+	"vega-mm/metrics"
+	strats "vega-mm/strategies"
+	"vega-mm/wallets"
+
+	commandspb "code.vegaprotocol.io/vega/protos/vega/commands/v1"
+)
 
 // The trading engine will be responsible for monitoring agents.
 // Data points that should be monitored include account balances, exposure,
@@ -15,22 +25,64 @@ import "sync"
 type TradingEngine struct {
 	mu sync.RWMutex
 
-	agents map[string]Agent // map[pubkey]Agent
+	embeddedVegaWallet *wallets.EmbeddedVegaWallet
 
+	agents map[string]*Agent // map[pubkey]Agent
+
+	metricsCh chan *metrics.MetricsEvent
 }
 
-func (t *TradingEngine) Init() {
+func NewEngine() *TradingEngine {
+	return &TradingEngine{
+		mu:     sync.RWMutex{},
+		agents: map[string]*Agent{},
+	}
+}
 
+func (t *TradingEngine) Init(metricsCh chan *metrics.MetricsEvent) *TradingEngine {
+	// Determine how many agents are required based on the strategies
+	// (Should we store the keypair index in each strategy?)
+
+	homePath := os.Getenv("HOME")
+	// mnemonic, err := os.ReadFile(fmt.Sprintf("%v/.config/vega-mm-fairground/embedded-wallet/words.txt", homePath))
+	mnemonic, err := os.ReadFile(fmt.Sprintf("%v/.config/vega-mm/embedded-wallet/words.txt", homePath))
+	if err != nil {
+		log.Fatalf("Failed to read words from file: %v", err)
+	}
+
+	t.embeddedVegaWallet = wallets.NewWallet(string(mnemonic))
+	t.metricsCh = metricsCh
+
+	return t
 }
 
 func (t *TradingEngine) RegisterAgent() {
 
 }
 
-func (t *TradingEngine) LoadStrategies() {
+func (t *TradingEngine) LoadStrategies(strategies []strats.Strategy, txBroadcastCh chan *commandspb.Transaction) {
+	for _, strategy := range strategies {
+		t.AddStrategy(strategy, txBroadcastCh)
+	}
 
 }
 
-func (t *TradingEngine) AddStrategy() {
+func (t *TradingEngine) AddStrategy(strat strats.Strategy, txBroadcastCh chan *commandspb.Transaction) {
+	// Adding the strategy involes:
+	//	- Generating the keypair for the agent index if not present
+	//	- Instantiating the Agent if not already present
+	//  - Registering the strategy with the agent
+
+	keyPair := t.embeddedVegaWallet.GetKeyPair(strat.GetAgentKeyPairIndex())
+	pubkey := keyPair.PubKey()
+
+	agent, ok := t.agents[pubkey]
+	if !ok {
+		// Create new agent
+		agent = NewAgent(keyPair, txBroadcastCh)
+		t.agents[pubkey] = agent
+	}
+
+	agent.RegisterStrategy(strat)
 
 }
