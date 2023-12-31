@@ -8,8 +8,10 @@ import (
 	"sync"
 	"time"
 	"vega-mm/stores"
+	strats "vega-mm/strategies"
 
 	apipb "code.vegaprotocol.io/vega/protos/data-node/api/v2"
+	"golang.org/x/exp/maps"
 
 	vegapb "code.vegaprotocol.io/vega/protos/vega"
 	"google.golang.org/grpc"
@@ -21,15 +23,37 @@ type VegaDataClient struct {
 	grpcAddr      string
 	grpcAddresses []string
 	vegaMarkets   []string
-	stores        map[pubkey]map[vegaMarketId]*stores.VegaStore
+	agentPubkeys  []string
+	stores        map[vegaMarketId]map[pubkey]*stores.VegaStore
+	storesSlice   []*stores.VegaStore
+	strategies    []strats.Strategy
 	svc           apipb.TradingDataServiceClient
 	reconnChan    chan struct{}
 	reconnecting  bool
 }
 
-func NewVegaDataClient(grpcAddrs []string, stores map[pubkey]map[vegaMarketId]*stores.VegaStore) *VegaDataClient {
+func NewVegaDataClient(grpcAddrs []string, dataStores map[vegaMarketId]map[pubkey]*stores.VegaStore) *VegaDataClient {
 
-	return nil
+	storesSlice := []*stores.VegaStore{}
+	agentPubkeys := []string{}
+	vegaMarketSet := map[string]struct{}{}
+	vegaMarkets := []string{}
+	for _, pubkey := range maps.Keys(dataStores) {
+		agentPubkeys = append(agentPubkeys, string(pubkey))
+		for vegaMarket, store := range dataStores[pubkey] {
+			vegaMarketSet[string(vegaMarket)] = struct{}{}
+			storesSlice = append(storesSlice, store)
+		}
+	}
+	vegaMarkets = maps.Keys(vegaMarketSet)
+
+	return &VegaDataClient{
+		grpcAddresses: grpcAddrs,
+		vegaMarkets:   vegaMarkets,
+		agentPubkeys:  agentPubkeys,
+		stores:        dataStores,
+		reconnChan:    make(chan struct{}),
+	}
 }
 
 func (vegaClient *VegaDataClient) testGrpcAddresses() (ok bool) {
@@ -145,8 +169,6 @@ func (vegaClient *VegaDataClient) StreamVegaData(wg *sync.WaitGroup) {
 
 	vegaClient.svc = apipb.NewTradingDataServiceClient(conn)
 
-	// marketIds := reflect.ValueOf(agent.strategies).MapKeys()
-
 	// Load initial data
 	vegaClient.loadMarkets()
 	vegaClient.loadMarketData()
@@ -156,8 +178,6 @@ func (vegaClient *VegaDataClient) StreamVegaData(wg *sync.WaitGroup) {
 	vegaClient.loadAssets()
 	vegaClient.loadLiquidityProvisions()
 	vegaClient.loadStakeToCcyVolume()
-
-	// spew.Dump(d.s.v)
 
 	// Start streams
 	go vegaClient.streamMarketData()
@@ -179,7 +199,10 @@ func (v *VegaDataClient) loadMarkets() {
 			return
 		}
 
-		v.agent.strategies[marketId].vegaStore.SetMarket(res.Market)
+		for _, store := range v.stores[vegaMarketId(marketId)] {
+			store.SetMarket(res.Market)
+		}
+
 	}
 }
 
@@ -194,98 +217,105 @@ func (v *VegaDataClient) loadMarketData() {
 			return
 		}
 
-		v.agent.strategies[marketId].vegaStore.SetMarketData(res.MarketData)
+		for _, store := range v.stores[vegaMarketId(marketId)] {
+			store.SetMarketData(res.MarketData)
+		}
+
 	}
 }
 
 func (v *VegaDataClient) loadAccounts() {
 
-	res, err := v.svc.ListAccounts(context.Background(), &apipb.ListAccountsRequest{Filter: &apipb.AccountFilter{PartyIds: []string{v.agent.pubkey}}})
+	for _, pubkey := range v.agentPubkeys {
+		res, err := v.svc.ListAccounts(context.Background(), &apipb.ListAccountsRequest{Filter: &apipb.AccountFilter{PartyIds: []string{pubkey}}})
+		if err != nil {
+			log.Printf("Couldn't load accounts: %v\n", err)
+			v.handleGrpcReconnect()
+			return
+		}
+
+		accounts := []*apipb.AccountBalance{}
+		for _, a := range res.Accounts.Edges {
+			accounts = append(accounts, a.Node)
+		}
+
+		for _, marketId := range v.vegaMarkets {
+			for pk, store := range v.stores[vegaMarketId(marketId)] {
+				if string(pk) == pubkey {
+					store.SetAccounts(accounts)
+				}
+			}
+		}
+
+	}
+}
+
+// func (v *VegaDataClient) loadOrders() {
+
+// 	for _, marketId := range v.vegaMarkets {
+
+// 		// res, err := v.svc.ListOrders(context.Background(), &apipb.ListOrdersRequest{PartyId: v.agent.pubkey, MarketId: config.VegaMarket, LiveOnly: true})
+// 		liveOnly := true
+// 		res, err := v.svc.ListOrders(context.Background(), &apipb.ListOrdersRequest{Filter: &apipb.OrderFilter{PartyIds: []string{v.agent.pubkey}, MarketIds: []string{marketId}, LiveOnly: &liveOnly}})
+// 		if err != nil {
+// 			log.Printf("Couldn't load orders: %v\n", err)
+// 			v.handleGrpcReconnect()
+// 			return
+// 		}
+
+// 		orders := []*vegapb.Order{}
+// 		for _, a := range res.Orders.Edges {
+// 			orders = append(orders, a.Node)
+// 		}
+
+// 		v.agent.strategies[marketId].vegaStore.SetOrders(orders)
+
+// 	}
+// }
+
+func (v *VegaDataClient) loadPositions() {
+
+	reqFilter := &apipb.PositionsFilter{PartyIds: v.agentPubkeys, MarketIds: v.vegaMarkets}
+	req := &apipb.ListAllPositionsRequest{Filter: reqFilter}
+	res, err := v.svc.ListAllPositions(context.Background(), req)
 	if err != nil {
-		log.Printf("Couldn't load accounts: %v\n", err)
+		log.Printf("Couldn't load positions: %v\n", err)
 		v.handleGrpcReconnect()
 		return
 	}
 
-	accounts := []*apipb.AccountBalance{}
-	for _, a := range res.Accounts.Edges {
-		accounts = append(accounts, a.Node)
-	}
-
-	for _, marketId := range v.vegaMarkets {
-		v.agent.strategies[marketId].vegaStore.SetAccounts(accounts)
-	}
-}
-
-func (v *VegaDataClient) loadOrders() {
-
-	for _, marketId := range v.vegaMarkets {
-
-		// res, err := v.svc.ListOrders(context.Background(), &apipb.ListOrdersRequest{PartyId: v.agent.pubkey, MarketId: config.VegaMarket, LiveOnly: true})
-		liveOnly := true
-		res, err := v.svc.ListOrders(context.Background(), &apipb.ListOrdersRequest{Filter: &apipb.OrderFilter{PartyIds: []string{v.agent.pubkey}, MarketIds: []string{marketId}, LiveOnly: &liveOnly}})
-		if err != nil {
-			log.Printf("Couldn't load orders: %v\n", err)
-			v.handleGrpcReconnect()
-			return
-		}
-
-		orders := []*vegapb.Order{}
-		for _, a := range res.Orders.Edges {
-			orders = append(orders, a.Node)
-		}
-
-		v.agent.strategies[marketId].vegaStore.SetOrders(orders)
+	for _, edge := range res.Positions.Edges {
+		marketId := vegaMarketId(edge.Node.GetMarketId())
+		agentPubkey := pubkey(edge.Node.GetPartyId())
+		v.stores[marketId][agentPubkey].SetPosition(edge.Node)
 
 	}
-}
 
-func (v *VegaDataClient) loadPositions() {
-
-	for _, marketId := range v.vegaMarkets {
-
-		reqFilter := &apipb.PositionsFilter{PartyIds: []string{v.agent.pubkey}, MarketIds: []string{marketId}}
-		req := &apipb.ListAllPositionsRequest{Filter: reqFilter}
-		res, err := v.svc.ListAllPositions(context.Background(), req)
-		if err != nil {
-			log.Printf("Couldn't load positions: %v\n", err)
-			v.handleGrpcReconnect()
-			return
-		}
-
-		if len(res.Positions.Edges) > 1 {
-			log.Fatalf("Invalid number of positions: %v", len(res.Positions.Edges))
-		}
-
-		if len(res.Positions.Edges) == 1 {
-			v.agent.strategies[marketId].vegaStore.SetPosition(res.Positions.Edges[0].Node)
-		}
-
-	}
 }
 
 func (v *VegaDataClient) loadAssets() {
 
-	for _, marketId := range v.vegaMarkets {
+	res, err := v.svc.ListAssets(context.Background(), &apipb.ListAssetsRequest{})
+	if err != nil {
+		log.Printf("Couldn't load assets: %v\n", err)
+		v.handleGrpcReconnect()
+		return
+	}
 
-		res, err := v.svc.ListAssets(context.Background(), &apipb.ListAssetsRequest{})
-		if err != nil {
-			log.Printf("Couldn't load assets: %v\n", err)
-			v.handleGrpcReconnect()
-			return
-		}
-
-		for _, a := range res.Assets.Edges {
-			v.agent.strategies[marketId].vegaStore.SetAsset(a.Node)
+	for _, a := range res.Assets.Edges {
+		for _, store := range v.storesSlice {
+			store.SetAsset(a.Node)
 		}
 	}
 }
 
 func (v *VegaDataClient) loadLiquidityProvisions() {
 
-	for _, marketId := range v.vegaMarkets {
+	for _, store := range v.storesSlice {
 
-		req := &apipb.ListAllLiquidityProvisionsRequest{MarketId: &marketId, PartyId: &v.agent.pubkey}
+		marketId := store.GetMarketId()
+		partyId := store.GetAgentPubKey()
+		req := &apipb.ListAllLiquidityProvisionsRequest{MarketId: &marketId, PartyId: &partyId}
 		res, err := v.svc.ListAllLiquidityProvisions(context.Background(), req)
 		if err != nil {
 			log.Printf("Couldn't load liquidity provisions: %v\n", err)
@@ -294,7 +324,7 @@ func (v *VegaDataClient) loadLiquidityProvisions() {
 		}
 
 		for _, a := range res.LiquidityProvisions.Edges {
-			v.agent.strategies[marketId].vegaStore.SetLiquidityProvision(a.Node)
+			v.stores[vegaMarketId(marketId)][pubkey(partyId)].SetLiquidityProvision(a.Node.Pending)
 		}
 
 		// log.Printf("Liquidity Provisions for market: %v: %v", marketId, res.LiquidityProvisions.Edges)
@@ -312,8 +342,8 @@ func (v *VegaDataClient) loadStakeToCcyVolume() {
 
 	netParam := res.GetNetworkParameter()
 
-	for _, marketId := range v.vegaMarkets {
-		v.agent.strategies[marketId].vegaStore.SetStakeToCcyVolume(netParam)
+	for _, store := range v.storesSlice {
+		store.SetStakeToCcyVolume(netParam)
 	}
 
 }

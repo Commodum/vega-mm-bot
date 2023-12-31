@@ -50,6 +50,7 @@ func (a *Agent) RegisterStrategy(strat strats.Strategy) {
 	}
 
 	strat.SetAgentPubKey(a.pubkey)
+	strat.GetVegaStore().SetAgentPubKey(a.pubkey)
 
 	strat.SetTxDataChan(a.signer.GetInChan())
 	a.strategies[vegaMarket] = strat

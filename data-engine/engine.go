@@ -17,7 +17,7 @@ type DataEngine struct {
 	// vegaStores    map[string][]*stores.VegaStore
 	// binanceStores map[string][]*stores.BinanceStore
 
-	vegaStores    map[pubkey]map[vegaMarketId]*stores.VegaStore
+	vegaStores    map[vegaMarketId]map[pubkey]*stores.VegaStore
 	binanceStores map[binanceTicker][]*stores.BinanceStore
 }
 
@@ -32,7 +32,7 @@ type DataEngine struct {
 
 func NewDataEngine() *DataEngine {
 	return &DataEngine{
-		vegaStores:    map[pubkey]map[vegaMarketId]*stores.VegaStore{},
+		vegaStores:    map[vegaMarketId]map[pubkey]*stores.VegaStore{},
 		binanceStores: map[binanceTicker][]*stores.BinanceStore{},
 	}
 }
@@ -61,13 +61,13 @@ func (d *DataEngine) RegisterStrategies(strategies []strats.Strategy) *DataEngin
 		stratMarketId := vegaMarketId(strat.GetVegaMarketId())
 		ticker := binanceTicker(strat.GetBinanceMarketTicker())
 
-		nestedMap, ok := d.vegaStores[agentPubKey]
+		pubkeyMap, ok := d.vegaStores[stratMarketId]
 		if !ok {
-			d.vegaStores[agentPubKey] = map[vegaMarketId]*stores.VegaStore{}
-			nestedMap = d.vegaStores[agentPubKey]
+			d.vegaStores[stratMarketId] = map[pubkey]*stores.VegaStore{}
+			pubkeyMap = d.vegaStores[stratMarketId]
 		}
 
-		nestedMap[stratMarketId] = strat.GetVegaStore()
+		pubkeyMap[agentPubKey] = strat.GetVegaStore()
 		d.binanceStores[ticker] = append(d.binanceStores[ticker], strat.GetBinanceStore())
 	}
 

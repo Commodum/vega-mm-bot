@@ -14,6 +14,7 @@ import (
 type VegaStore struct {
 	mu sync.RWMutex
 
+	agentPubKey        string
 	marketId           string
 	assets             map[string]*vegapb.Asset
 	market             *vegapb.Market
@@ -59,10 +60,28 @@ func (v *VegaStore) GetMarketDataUpdateCounter() int64 {
 	return v.marketDataUpdateCounter
 }
 
+func (v *VegaStore) SetAgentPubKey(pubkey string) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.agentPubKey = pubkey
+}
+
+func (v *VegaStore) GetAgentPubKey() string {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	return v.agentPubKey
+}
+
 func (v *VegaStore) SetMarketId(marketId string) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	v.marketId = marketId
+}
+
+func (v *VegaStore) GetMarketId() string {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	return v.marketId
 }
 
 func (v *VegaStore) SetMarket(market *vegapb.Market) {
@@ -171,6 +190,7 @@ func (v *VegaStore) GetPosition() *vegapb.Position {
 	return v.position
 }
 
+// func (v *VegaStore) SetLiquidityProvision(liquidityProvision *vegapb.LiquidityProvision) {
 func (v *VegaStore) SetLiquidityProvision(liquidityProvision *vegapb.LiquidityProvision) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
