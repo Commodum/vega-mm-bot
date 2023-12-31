@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"vega-mm/data-engine"
 	"vega-mm/metrics"
 	strats "vega-mm/strategies"
 	"vega-mm/trading-engine"
@@ -49,6 +50,29 @@ var (
 )
 
 func GetFairgroundStrategies() []strats.Strategy {
+
+	s := []strats.Strategy{}
+
+	btcMartingaleStrategyOpts := &strats.StrategyOpts[strats.Martingale]{
+		General: &strats.GeneralOpts{
+			AgentKeyPairIdx:        1,
+			VegaMarketId:           "",
+			BinanceMarket:          "BTCUSDT",
+			NumOrdersPerSide:       5,
+			LiquidityCommitment:    true,
+			TargetObligationVolume: decimal.NewFromFloat(1.8),
+			TargetVolCoefficient:   decimal.NewFromFloat(1.2),
+		},
+		Specific: &strats.MartingaleOpts{
+			MaxProbabilityOfTrading: decimal.NewFromFloat(0.85),
+			OrderSpacing:            decimal.NewFromFloat(0.0005),
+			OrderSizeBase:           decimal.NewFromFloat(2),
+		},
+	}
+
+	btcMartingaleStrategy := strats.NewMartingaleStrategy(btcMartingaleStrategyOpts)
+
+	s = append(s, btcMartingaleStrategy)
 
 	return nil
 }
@@ -143,6 +167,8 @@ func init() {
 
 	tradingEngine := trading.NewEngine().Init(metricsCh)
 	tradingEngine.LoadStrategies(GetFairgroundStrategies(), txBroadcastCh)
+
+	dataEngine := data.NewDataEngine().RegisterStrategies(tradingEngine.GetStrategies()).Init()
 
 	// In Init, we initialize all the separate engines in the trading system:
 	//

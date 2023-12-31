@@ -10,6 +10,7 @@ import (
 	"vega-mm/wallets"
 
 	commandspb "code.vegaprotocol.io/vega/protos/vega/commands/v1"
+	"golang.org/x/exp/maps"
 )
 
 // The trading engine will be responsible for monitoring agents.
@@ -85,4 +86,12 @@ func (t *TradingEngine) AddStrategy(strat strats.Strategy, txBroadcastCh chan *c
 
 	agent.RegisterStrategy(strat)
 
+}
+
+func (t *TradingEngine) GetStrategies() []strats.Strategy {
+	s := []strats.Strategy{}
+	for _, agent := range maps.Values(t.agents) {
+		s = append(s, agent.GetStrategies()...)
+	}
+	return s
 }

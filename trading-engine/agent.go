@@ -49,6 +49,8 @@ func (a *Agent) RegisterStrategy(strat strats.Strategy) {
 		return
 	}
 
+	strat.SetAgentPubKey(a.pubkey)
+
 	strat.SetTxDataChan(a.signer.GetInChan())
 	a.strategies[vegaMarket] = strat
 }
@@ -90,4 +92,12 @@ func (a *Agent) RunStrategies(metricsCh chan *metrics.MetricsState) {
 	for _, strat := range maps.Values(a.strategies) {
 		go strat.RunStrategy(metricsCh)
 	}
+}
+
+func (a *Agent) GetStrategies() []strats.Strategy {
+	s := []strats.Strategy{}
+	for _, strat := range maps.Values(a.strategies) {
+		s = append(s, strat)
+	}
+	return s
 }

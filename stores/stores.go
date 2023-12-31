@@ -1,4 +1,4 @@
-package data
+package stores
 
 import (
 	"log"
@@ -218,5 +218,13 @@ func (b *BinanceStore) GetBestAsk() (ask decimal.Decimal) {
 }
 
 func (b *BinanceStore) IsStale() bool {
+	b.mu.RLock()
+	b.mu.RUnlock()
 	return b.isStale
+}
+
+func (b *BinanceStore) SetIsStale(isStale bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.isStale = isStale
 }

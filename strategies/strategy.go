@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
-	"vega-mm/data-engine"
 	"vega-mm/metrics"
+	"vega-mm/stores"
 
 	pd "code.vegaprotocol.io/quant/pricedistribution"
 	"code.vegaprotocol.io/quant/riskmodelbs"
@@ -95,8 +95,8 @@ type MartingaleStrategy struct {
 	*GeneralOpts
 	*MartingaleOpts
 
-	vegaStore    *data.VegaStore
-	binanceStore *data.BinanceStore
+	vegaStore    *stores.VegaStore
+	binanceStore *stores.BinanceStore
 
 	txDataCh chan *commandspb.InputData
 }
@@ -122,8 +122,8 @@ type Strategy interface {
 	GetVegaMarketId() string
 	GetBinanceMarketTicker() string
 
-	GetVegaStore() *data.VegaStore
-	GetBinanceStore() *data.BinanceStore
+	GetVegaStore() *stores.VegaStore
+	GetBinanceStore() *stores.BinanceStore
 
 	SetVegaDecimals(positionDecimals, priceDecimals, assetDecimals int64)
 	GetVegaDecimals() *decimals
@@ -136,6 +136,8 @@ type Strategy interface {
 
 	RunStrategy(chan *metrics.MetricsState)
 
+	SetAgentPubKey(string)
+	GetAgentPubKey() string
 	SetAgentPubKeyBalance(decimal.Decimal)
 	GetAgentPubKeyBalance() decimal.Decimal
 
@@ -161,8 +163,8 @@ func NewMartingaleStrategy(opts *StrategyOpts[Martingale]) *MartingaleStrategy {
 	return &MartingaleStrategy{
 		GeneralOpts:    opts.General,
 		MartingaleOpts: opts.Specific,
-		vegaStore:      data.NewVegaStore(opts.General.VegaMarketId),
-		binanceStore:   data.NewBinanceStore(opts.General.BinanceMarket),
+		vegaStore:      stores.NewVegaStore(opts.General.VegaMarketId),
+		binanceStore:   stores.NewBinanceStore(opts.General.BinanceMarket),
 	}
 }
 
@@ -182,11 +184,11 @@ func (strat *MartingaleStrategy) GetBinanceMarketTicker() string {
 	return strat.BinanceMarket
 }
 
-func (strat *MartingaleStrategy) GetVegaStore() *data.VegaStore {
+func (strat *MartingaleStrategy) GetVegaStore() *stores.VegaStore {
 	return strat.vegaStore
 }
 
-func (strat *MartingaleStrategy) GetBinanceStore() *data.BinanceStore {
+func (strat *MartingaleStrategy) GetBinanceStore() *stores.BinanceStore {
 	return strat.binanceStore
 }
 
@@ -311,6 +313,16 @@ func (strat *MartingaleStrategy) CancelLiquidityCommitment() {
 
 	}
 
+}
+
+// Locks not used because this should be writen once only.
+func (s *MartingaleStrategy) SetAgentPubKey(pubkey string) {
+	s.agentPubKey = pubkey
+}
+
+// No lock because this value should be written once only.
+func (s *MartingaleStrategy) GetAgentPubKey() string {
+	return s.agentPubKey
 }
 
 func (s *MartingaleStrategy) SetAgentPubKeyBalance(balance decimal.Decimal) {
