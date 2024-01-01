@@ -5,20 +5,16 @@ import (
 	strats "vega-mm/strategies"
 )
 
-type pubkey string
-type vegaMarketId string
-type binanceTicker string
-
 type DataEngine struct {
 	vegaCoreClient *VegaCoreClient
 	vegaDataClient *VegaDataClient
 	binanceClient  *BinanceClient
 
-	// vegaStores    map[string][]*stores.VegaStore
-	// binanceStores map[string][]*stores.BinanceStore
+	vegaStores    []*stores.VegaStore
+	binanceStores []*stores.BinanceStore
 
-	vegaStores    map[vegaMarketId]map[pubkey]*stores.VegaStore
-	binanceStores map[binanceTicker][]*stores.BinanceStore
+	// vegaStores    map[vegaMarketId]map[pubkey]*stores.VegaStore
+	// binanceStores map[binanceTicker][]*stores.BinanceStore
 }
 
 // Need to decide how data should be collected. Should we have separate streams for each agent,
@@ -32,8 +28,10 @@ type DataEngine struct {
 
 func NewDataEngine() *DataEngine {
 	return &DataEngine{
-		vegaStores:    map[vegaMarketId]map[pubkey]*stores.VegaStore{},
-		binanceStores: map[binanceTicker][]*stores.BinanceStore{},
+		vegaStores:    []*stores.VegaStore{},
+		binanceStores: []*stores.BinanceStore{},
+		// vegaStores:    map[vegaMarketId]map[pubkey]*stores.VegaStore{},
+		// binanceStores: map[binanceTicker][]*stores.BinanceStore{},
 	}
 }
 
@@ -48,8 +46,9 @@ func (d *DataEngine) Init(binanceWsAddr string, vegaCoreGrpcAddrs []string, vega
 	//	- Begins collecting spam statistics for use by the proof of work worker.
 
 	// Instantiate clients
-	binanceClient := NewBinanceClient(binanceWsAddr, d.binanceStores)
-	vegaDataClient := NewVegaDataClient(vegaDataGrpcAddrs, d.vegaStores)
+	binanceClient := NewBinanceClient(binanceWsAddr).Init(d.binanceStores)
+	vegaDataClient := NewVegaDataClient(vegaDataGrpcAddrs).Init(d.vegaStores)
+	vegCoreClient := NewVegaCoreClient(vegaCoreGrpcAddrs)
 
 	return d
 }
@@ -57,18 +56,8 @@ func (d *DataEngine) Init(binanceWsAddr string, vegaCoreGrpcAddrs []string, vega
 func (d *DataEngine) RegisterStrategies(strategies []strats.Strategy) *DataEngine {
 
 	for _, strat := range strategies {
-		agentPubKey := pubkey(strat.GetAgentPubKey())
-		stratMarketId := vegaMarketId(strat.GetVegaMarketId())
-		ticker := binanceTicker(strat.GetBinanceMarketTicker())
-
-		pubkeyMap, ok := d.vegaStores[stratMarketId]
-		if !ok {
-			d.vegaStores[stratMarketId] = map[pubkey]*stores.VegaStore{}
-			pubkeyMap = d.vegaStores[stratMarketId]
-		}
-
-		pubkeyMap[agentPubKey] = strat.GetVegaStore()
-		d.binanceStores[ticker] = append(d.binanceStores[ticker], strat.GetBinanceStore())
+		d.vegaStores = append(d.vegaStores, strat.GetVegaStore())
+		d.binanceStores = append(d.binanceStores, strat.GetBinanceStore())
 	}
 
 	return d

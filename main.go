@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"strings"
 	"vega-mm/data-engine"
 	"vega-mm/metrics"
 	strats "vega-mm/strategies"
@@ -168,7 +169,8 @@ func init() {
 	tradingEngine := trading.NewEngine().Init(metricsCh)
 	tradingEngine.LoadStrategies(GetFairgroundStrategies(), txBroadcastCh)
 
-	dataEngine := data.NewDataEngine().RegisterStrategies(tradingEngine.GetStrategies()).Init()
+	dataEngine := data.NewDataEngine().RegisterStrategies(tradingEngine.GetStrategies())
+	dataEngine.Init(binanceWsAddr, strings.Split(vegaCoreAddrs, ","), strings.Split(vegaGrpcAddresses, ","))
 
 	// In Init, we initialize all the separate engines in the trading system:
 	//

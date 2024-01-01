@@ -17,17 +17,26 @@ import (
 
 type BinanceClient struct {
 	wsAddr       string
-	storesMap    map[binanceTicker][]*stores.BinanceStore
+	storesMap    map[string][]*stores.BinanceStore
 	reconnChan   chan struct{}
 	reconnecting bool
 }
 
-func NewBinanceClient(wsAddr string, stores map[binanceTicker][]*stores.BinanceStore) *BinanceClient {
+func NewBinanceClient(wsAddr string) *BinanceClient {
 	return &BinanceClient{
 		wsAddr:     wsAddr,
-		storesMap:  stores,
+		storesMap:  map[string][]*stores.BinanceStore{},
 		reconnChan: make(chan struct{}),
 	}
+}
+
+func (b *BinanceClient) Init(dataStores []*stores.BinanceStore) *BinanceClient {
+
+	for _, store := range dataStores {
+		b.storesMap[store.GetMarketTicker()] = append(b.storesMap[store.GetMarketTicker()], store)
+	}
+
+	return b
 }
 
 func (b *BinanceClient) handleBinanceReconnect() {
@@ -182,7 +191,7 @@ func (b *BinanceClient) StreamBinanceData() {
 			rateCalc.msgCounter++
 			rateCalc.mu.Unlock()
 
-			for _, store := range b.storesMap[binanceTicker(res.Symbol)] {
+			for _, store := range b.storesMap[res.Symbol] {
 				store.SetBestBidAndAsk(res.BidPrice, res.AskPrice)
 			}
 		}

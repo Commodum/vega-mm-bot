@@ -219,6 +219,10 @@ func (v *VegaStore) GetStakeToCcyVolume() string {
 	return v.stakeToCcyVolume
 }
 
+func (b *BinanceStore) GetMarketTicker() string {
+	return b.market
+}
+
 func (b *BinanceStore) SetBestBidAndAsk(bid, ask decimal.Decimal) {
 	b.mu.Lock()
 	defer b.mu.Unlock()

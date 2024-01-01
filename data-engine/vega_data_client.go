@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 	"vega-mm/stores"
-	strats "vega-mm/strategies"
 
 	apipb "code.vegaprotocol.io/vega/protos/data-node/api/v2"
 	"golang.org/x/exp/maps"
@@ -18,42 +17,58 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+type pubkey string
+type vegaMarketId string
+type binanceTicker string
+
 type VegaDataClient struct {
 	de            *DataEngine
 	grpcAddr      string
 	grpcAddresses []string
 	vegaMarkets   []string
 	agentPubkeys  []string
-	stores        map[vegaMarketId]map[pubkey]*stores.VegaStore
-	storesSlice   []*stores.VegaStore
-	strategies    []strats.Strategy
-	svc           apipb.TradingDataServiceClient
-	reconnChan    chan struct{}
-	reconnecting  bool
+
+	stores         map[string]map[string]*stores.VegaStore // map[marketId]map[pubkey]*stores.VegaStore
+	storesByMarket map[string][]*stores.VegaStore
+	storesByPubkey map[string][]*stores.VegaStore
+
+	storesSlice []*stores.VegaStore
+
+	svc          apipb.TradingDataServiceClient
+	reconnChan   chan struct{}
+	reconnecting bool
 }
 
-func NewVegaDataClient(grpcAddrs []string, dataStores map[vegaMarketId]map[pubkey]*stores.VegaStore) *VegaDataClient {
-
-	storesSlice := []*stores.VegaStore{}
-	agentPubkeys := []string{}
-	vegaMarketSet := map[string]struct{}{}
-	vegaMarkets := []string{}
-	for _, pubkey := range maps.Keys(dataStores) {
-		agentPubkeys = append(agentPubkeys, string(pubkey))
-		for vegaMarket, store := range dataStores[pubkey] {
-			vegaMarketSet[string(vegaMarket)] = struct{}{}
-			storesSlice = append(storesSlice, store)
-		}
-	}
-	vegaMarkets = maps.Keys(vegaMarketSet)
-
+func NewVegaDataClient(grpcAddrs []string) *VegaDataClient {
 	return &VegaDataClient{
 		grpcAddresses: grpcAddrs,
-		vegaMarkets:   vegaMarkets,
-		agentPubkeys:  agentPubkeys,
-		stores:        dataStores,
 		reconnChan:    make(chan struct{}),
 	}
+}
+
+func (v *VegaDataClient) Init(dataStores []*stores.VegaStore) *VegaDataClient {
+
+	v.stores = map[string]map[string]*stores.VegaStore{}
+	v.storesByMarket = map[string][]*stores.VegaStore{}
+	v.storesByPubkey = map[string][]*stores.VegaStore{}
+	v.storesSlice = dataStores
+
+	for _, store := range dataStores {
+		marketId, pubkey := store.GetMarketId(), store.GetAgentPubKey()
+
+		v.storesByMarket[marketId] = append(v.storesByMarket[marketId], store)
+		v.storesByPubkey[pubkey] = append(v.storesByPubkey[pubkey], store)
+		_, ok := v.stores[marketId]
+		if !ok {
+			v.stores[marketId] = map[string]*stores.VegaStore{}
+		}
+		v.stores[marketId][pubkey] = store
+	}
+
+	v.vegaMarkets = maps.Keys(v.storesByMarket)
+	v.agentPubkeys = maps.Keys(v.storesByPubkey)
+
+	return v
 }
 
 func (vegaClient *VegaDataClient) testGrpcAddresses() (ok bool) {
@@ -199,7 +214,7 @@ func (v *VegaDataClient) loadMarkets() {
 			return
 		}
 
-		for _, store := range v.stores[vegaMarketId(marketId)] {
+		for _, store := range v.stores[marketId] {
 			store.SetMarket(res.Market)
 		}
 
@@ -217,7 +232,7 @@ func (v *VegaDataClient) loadMarketData() {
 			return
 		}
 
-		for _, store := range v.stores[vegaMarketId(marketId)] {
+		for _, store := range v.stores[marketId] {
 			store.SetMarketData(res.MarketData)
 		}
 
@@ -240,7 +255,7 @@ func (v *VegaDataClient) loadAccounts() {
 		}
 
 		for _, marketId := range v.vegaMarkets {
-			for pk, store := range v.stores[vegaMarketId(marketId)] {
+			for pk, store := range v.stores[marketId] {
 				if string(pk) == pubkey {
 					store.SetAccounts(accounts)
 				}
@@ -285,10 +300,7 @@ func (v *VegaDataClient) loadPositions() {
 	}
 
 	for _, edge := range res.Positions.Edges {
-		marketId := vegaMarketId(edge.Node.GetMarketId())
-		agentPubkey := pubkey(edge.Node.GetPartyId())
-		v.stores[marketId][agentPubkey].SetPosition(edge.Node)
-
+		v.stores[edge.Node.GetMarketId()][edge.Node.GetPartyId()].SetPosition(edge.Node)
 	}
 
 }
@@ -324,7 +336,7 @@ func (v *VegaDataClient) loadLiquidityProvisions() {
 		}
 
 		for _, a := range res.LiquidityProvisions.Edges {
-			v.stores[vegaMarketId(marketId)][pubkey(partyId)].SetLiquidityProvision(a.Node.Pending)
+			v.stores[marketId][partyId].SetLiquidityProvision(a.Node.Pending)
 		}
 
 		// log.Printf("Liquidity Provisions for market: %v: %v", marketId, res.LiquidityProvisions.Edges)
@@ -364,113 +376,136 @@ func (v *VegaDataClient) streamNetworkParams() {
 
 func (v *VegaDataClient) streamMarketData() {
 
-	for _, marketId := range v.vegaMarkets {
-
-		stream, err := v.svc.ObserveMarketsData(context.Background(), &apipb.ObserveMarketsDataRequest{MarketIds: []string{marketId}})
-		if err != nil {
-			log.Printf("Failed to start Market Data stream: %v\n", err)
-			v.handleGrpcReconnect()
-			return
-		}
-
-		go func(marketId string, stream apipb.TradingDataService_ObserveMarketsDataClient) {
-			for {
-				res, err := stream.Recv()
-				if err != nil {
-					log.Printf("Could not recieve on market data stream: %v\n", err)
-					v.handleGrpcReconnect()
-					return
-				}
-
-				// fmt.Printf("Received market data on stream: %+v", res)
-
-				for _, md := range res.MarketData {
-					v.agent.strategies[marketId].vegaStore.SetMarketData(md)
-				}
-			}
-		}(marketId, stream)
-
-	}
-}
-
-func (v *VegaDataClient) streamAccounts() {
-
-	stream, err := v.svc.ObserveAccounts(context.Background(), &apipb.ObserveAccountsRequest{PartyId: v.agent.pubkey})
+	stream, err := v.svc.ObserveMarketsData(context.Background(), &apipb.ObserveMarketsDataRequest{MarketIds: v.vegaMarkets})
 	if err != nil {
-		log.Printf("Failed to start accounts stream: %v\n", err)
+		log.Printf("Failed to start Market Data stream: %v\n", err)
 		v.handleGrpcReconnect()
 		return
 	}
 
-	for {
-		res, err := stream.Recv()
+	go func(stream apipb.TradingDataService_ObserveMarketsDataClient) {
+		for {
+			res, err := stream.Recv()
+			if err != nil {
+				log.Printf("Could not recieve on market data stream: %v\n", err)
+				v.handleGrpcReconnect()
+				return
+			}
+
+			// fmt.Printf("Received market data on stream: %+v", res)
+
+			for _, md := range res.MarketData {
+				for _, store := range v.storesSlice {
+					if store.GetMarketId() == md.GetMarket() {
+						store.SetMarketData(md)
+					}
+				}
+			}
+		}
+	}(stream)
+
+}
+
+func (v *VegaDataClient) streamAccounts() {
+
+	for _, pubkey := range v.agentPubkeys {
+
+		stream, err := v.svc.ObserveAccounts(context.Background(), &apipb.ObserveAccountsRequest{PartyId: pubkey})
 		if err != nil {
-			log.Printf("Could not recieve on accounts stream: %v\n", err)
+			log.Printf("Failed to start accounts stream: %v\n", err)
 			v.handleGrpcReconnect()
 			return
 		}
 
-		// fmt.Printf("Received accounts on stream: %+v", res)
+		go func(pubkey string, stream apipb.TradingDataService_ObserveAccountsClient) {
+			for {
+				res, err := stream.Recv()
+				if err != nil {
+					log.Printf("Could not recieve on accounts stream: %v\n", err)
+					v.handleGrpcReconnect()
+					return
+				}
 
-		for _, marketId := range v.vegaMarkets {
-			switch r := res.Response.(type) {
-			case *apipb.ObserveAccountsResponse_Snapshot:
-				v.agent.strategies[marketId].vegaStore.SetAccounts(r.Snapshot.Accounts)
-			case *apipb.ObserveAccountsResponse_Updates:
-				v.agent.strategies[marketId].vegaStore.SetAccounts(r.Updates.Accounts)
+				// fmt.Printf("Received accounts on stream: %+v", res)
+
+				for _, store := range v.storesByPubkey[pubkey] {
+					switch r := res.Response.(type) {
+					case *apipb.ObserveAccountsResponse_Snapshot:
+						store.SetAccounts(r.Snapshot.Accounts)
+					case *apipb.ObserveAccountsResponse_Updates:
+						store.SetAccounts(r.Updates.Accounts)
+					}
+				}
+
 			}
-		}
+		}(pubkey, stream)
+
 	}
 }
 
 func (v *VegaDataClient) streamOrders() {
 
-	for _, marketId := range v.vegaMarkets {
+	stream, err := v.svc.ObserveOrders(context.Background(), &apipb.ObserveOrdersRequest{MarketIds: v.vegaMarkets, PartyIds: v.agentPubkeys})
+	if err != nil {
+		log.Printf("Failed to start Orders stream: %v\n", err)
+		v.handleGrpcReconnect()
+		return
+	}
 
-		stream, err := v.svc.ObserveOrders(context.Background(), &apipb.ObserveOrdersRequest{MarketIds: []string{marketId}, PartyIds: []string{v.agent.pubkey}})
+	for _, store := range v.storesSlice {
+		// Empty store before we start stream in case of reconnect with stale orders
+		store.ClearOrders()
+	}
+
+	orderMap := map[string]map[string][]*vegapb.Order{}
+	for _, marketId := range v.vegaMarkets {
+		orderMap[marketId] = map[string][]*vegapb.Order{}
+	}
+
+	for {
+		res, err := stream.Recv()
 		if err != nil {
-			log.Printf("Failed to start Orders stream: %v\n", err)
+			log.Printf("Could not recieve on orders stream: %v\n", err)
 			v.handleGrpcReconnect()
 			return
 		}
 
-		// Empty store before we start stream in case of reconnect with stale orders
-		v.agent.strategies[marketId].vegaStore.ClearOrders()
+		// fmt.Printf("Received orders on stream: %+v", res)
 
-		go func(marketId string, stream apipb.TradingDataService_ObserveOrdersClient) {
-			for {
-				res, err := stream.Recv()
-				if err != nil {
-					log.Printf("Could not recieve on orders stream: %v\n", err)
-					v.handleGrpcReconnect()
-					return
-				}
-
-				// fmt.Printf("Received orders on stream: %+v", res)
-
-				switch r := res.Response.(type) {
-				case *apipb.ObserveOrdersResponse_Snapshot:
-					v.agent.strategies[marketId].vegaStore.SetOrders(r.Snapshot.Orders)
-				case *apipb.ObserveOrdersResponse_Updates:
-					v.agent.strategies[marketId].vegaStore.SetOrders(r.Updates.Orders)
-				}
+		switch r := res.Response.(type) {
+		case *apipb.ObserveOrdersResponse_Snapshot:
+			for _, order := range r.Snapshot.Orders {
+				orderMap[order.MarketId][order.PartyId] = append(orderMap[order.MarketId][order.PartyId], order)
 			}
-		}(marketId, stream)
+			for _, store := range v.storesSlice {
+				store.SetOrders(orderMap[store.GetMarketId()][store.GetAgentPubKey()])
+				orderMap[store.GetMarketId()][store.GetAgentPubKey()] = nil
+			}
+		case *apipb.ObserveOrdersResponse_Updates:
+			for _, order := range r.Updates.Orders {
+				orderMap[order.MarketId][order.PartyId] = append(orderMap[order.MarketId][order.PartyId], order)
+			}
+			for _, store := range v.storesSlice {
+				store.SetOrders(orderMap[store.GetMarketId()][store.GetAgentPubKey()])
+				orderMap[store.GetMarketId()][store.GetAgentPubKey()] = nil
+			}
+		}
 	}
+
 }
 
 func (v *VegaDataClient) streamPositions() {
 
-	for _, marketId := range v.vegaMarkets {
+	for _, pubkey := range v.agentPubkeys {
 
-		stream, err := v.svc.ObservePositions(context.Background(), &apipb.ObservePositionsRequest{MarketId: &marketId, PartyId: &v.agent.pubkey})
+		stream, err := v.svc.ObservePositions(context.Background(), &apipb.ObservePositionsRequest{PartyId: &pubkey})
 		if err != nil {
 			log.Printf("Failed to start positions stream: %v\n", err)
 			v.handleGrpcReconnect()
 			return
 		}
 
-		go func(marketId string, stream apipb.TradingDataService_ObservePositionsClient) {
+		go func(pubkey string, stream apipb.TradingDataService_ObservePositionsClient) {
 			for {
 				res, err := stream.Recv()
 				if err != nil {
@@ -483,11 +518,15 @@ func (v *VegaDataClient) streamPositions() {
 
 				switch r := res.Response.(type) {
 				case *apipb.ObservePositionsResponse_Snapshot:
-					v.agent.strategies[marketId].vegaStore.SetPosition(r.Snapshot.Positions[0])
+					for _, pos := range r.Snapshot.Positions {
+						v.stores[pos.GetMarketId()][pubkey].SetPosition(pos)
+					}
 				case *apipb.ObservePositionsResponse_Updates:
-					v.agent.strategies[marketId].vegaStore.SetPosition(r.Updates.Positions[0])
+					for _, pos := range r.Updates.Positions {
+						v.stores[pos.GetMarketId()][pubkey].SetPosition(pos)
+					}
 				}
 			}
-		}(marketId, stream)
+		}(pubkey, stream)
 	}
 }
