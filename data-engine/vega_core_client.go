@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sort"
 	"time"
+	"vega-mm/pow"
 
-	vegaApiPb "code.vegaprotocol.io/vega/protos/vega/api/v1"
+	coreapipb "code.vegaprotocol.io/vega/protos/vega/api/v1"
 	commandspb "code.vegaprotocol.io/vega/protos/vega/commands/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -21,16 +23,42 @@ type VegaCoreClient struct {
 	grpcAddr  string
 	grpcAddrs []string
 
-	txInCh chan *commandspb.Transaction
+	agentPubkeys  []string
+	txInCh        chan *commandspb.Transaction
+	powStatsOutCh chan *pow.PowStatistic
+
+	reconnecting bool
+	reconnChan   chan struct{}
 }
 
 func NewVegaCoreClient(coreAddrs []string) *VegaCoreClient {
 	return &VegaCoreClient{
 		grpcAddrs: coreAddrs,
+
+		reconnChan: make(chan struct{}),
 	}
 }
 
-func (v *VegaCoreClient) TestVegaCoreAddrs() {
+func (v *VegaCoreClient) Init(pubkeys []string, txInCh chan *commandspb.Transaction, powStatsCh chan *pow.PowStatistic) *VegaCoreClient {
+
+	v.agentPubkeys = pubkeys
+	v.txInCh = txInCh
+	v.powStatsOutCh = powStatsCh
+
+	ok := v.TestVegaCoreAddrs()
+	if !ok {
+		log.Fatalf("Failed to connect to a Vega core node.")
+	}
+
+	return v
+}
+
+func (v *VegaCoreClient) Start() {
+	v.StartGetSpamStatisticsLoop()
+	v.StartSubmitTxLoop()
+}
+
+func (v *VegaCoreClient) TestVegaCoreAddrs() (ok bool) {
 
 	fmt.Printf("Testing Vega core gRPC API addresses...\n")
 
@@ -54,9 +82,9 @@ func (v *VegaCoreClient) TestVegaCoreAddrs() {
 			continue
 		}
 
-		grpcClient := vegaApiPb.NewCoreServiceClient(conn)
+		grpcClient := coreapipb.NewCoreServiceClient(conn)
 
-		_, err = grpcClient.LastBlockHeight(context.Background(), &vegaApiPb.LastBlockHeightRequest{})
+		_, err = grpcClient.LastBlockHeight(context.Background(), &coreapipb.LastBlockHeightRequest{})
 		if err != nil {
 			log.Printf("Could not get last block from url: %v. Error: %v", addr, err)
 			failures = append(failures, addr)
@@ -74,10 +102,13 @@ func (v *VegaCoreClient) TestVegaCoreAddrs() {
 	}
 
 	if len(successes) == 0 {
-		log.Printf("No successful connections to Vega Core APIs. Waiting 10s before retry\n")
-		s.vegaCoreAddr = ""
-		time.Sleep(time.Second * 10)
+		ok = false
+		v.grpcAddr = ""
+		// log.Printf("No successful connections to Vega Core APIs. Waiting 10s before retry\n")
+		// time.Sleep(time.Second * 10)
 		return
+	} else {
+		ok = true
 	}
 
 	fmt.Printf("Successes: %+v\n", successes)
@@ -87,96 +118,119 @@ func (v *VegaCoreClient) TestVegaCoreAddrs() {
 	})
 	fmt.Printf("Lowest latency core address was: %v with %vms latency\n", successes[0].addr, successes[0].latencyMs)
 	fmt.Printf("Setting signer vegaCoreAddr to %v\n", successes[0])
-	s.vegaCoreAddr = successes[0].addr
-
+	v.grpcAddr = successes[0].addr
+	return
 }
 
-func (s *signer) SubmitTx(tx *commandspb.Transaction) *vegaApiPb.SubmitTransactionResponse {
+func (v *VegaCoreClient) StartSubmitTxLoop() {
 
-	fmt.Printf("Submitting Tx...\n")
-	req := &vegaApiPb.SubmitTransactionRequest{Tx: tx}
-	conn, err := grpc.Dial(s.vegaCoreAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.Dial(v.grpcAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Printf("Could not connect to Vega Core node: %v", err)
-		s.HandleVegaCoreReconnect()
-		return nil
+		v.HandleVegaCoreReconnect()
+		return
 	}
-	defer conn.Close()
-	coreSvc := vegaApiPb.NewCoreServiceClient(conn)
-	res, err := coreSvc.SubmitTransaction(context.Background(), req)
-	if err != nil {
-		log.Printf("Could not submit transaction to Vega Core node: %v", err)
-		s.HandleVegaCoreReconnect()
-		return nil
-	} else if !res.Success {
-		log.Printf("Tx not successful: tx = %s; code = %d; data = %s\n", res.TxHash, res.Code, res.Data)
-		// log.Printf("PoW for Tx: %+v\n", tx.Pow)
-	} else {
-		log.Printf("Tx successful: TxHash: %v\n", res.TxHash)
-		// log.Printf("PoW for Tx: %+v\n", tx.Pow)
-	}
-	return res
+
+	go func(conn *grpc.ClientConn) {
+		defer conn.Close()
+		coreSvc := coreapipb.NewCoreServiceClient(conn)
+		for tx := range v.txInCh {
+			req := &coreapipb.SubmitTransactionRequest{Tx: tx}
+			res, err := coreSvc.SubmitTransaction(context.Background(), req)
+			if err != nil {
+				log.Printf("Could not submit transaction to Vega Core node: %v", err)
+				v.HandleVegaCoreReconnect()
+				return
+			} else if !res.Success {
+				log.Printf("Tx not successful: txHash = %s; code = %d; data = %s\n", res.TxHash, res.Code, res.Data)
+				// log.Printf("PoW for Tx: %+v\n", tx.Pow)
+			} else {
+				log.Printf("Tx successful: TxHash: %v\n", res.TxHash)
+				// log.Printf("PoW for Tx: %+v\n", tx.Pow)
+			}
+		}
+	}(conn)
+
 }
 
-func (s *signer) GetLastBlock() *recentBlock {
+func (v *VegaCoreClient) StartGetSpamStatisticsLoop() {
 
-	lbhReq := &vegaApiPb.LastBlockHeightRequest{}
-	conn, err := grpc.Dial(s.vegaCoreAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	go func() {
+		for range time.NewTicker(time.Second * 2).C {
+			v.GetSpamStatistics()
+		}
+	}()
+
+}
+
+func (v *VegaCoreClient) GetSpamStatistics() {
+
+	conn, err := grpc.Dial(v.grpcAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Printf("Failed to connect to Vega Core node: %v\n", err)
-		// We should switch to another vega node in this instance
-		s.HandleVegaCoreReconnect()
-		return nil
+		v.HandleVegaCoreReconnect()
+		return
 	}
 	defer conn.Close()
 
-	coreService := vegaApiPb.NewCoreServiceClient(conn)
-	res, err := coreService.LastBlockHeight(context.Background(), lbhReq)
-	if err != nil {
-		log.Printf("Failed to get last block height from core node: %v\n", err)
-		// Switch to another vega node addr
-		s.HandleVegaCoreReconnect()
-		return nil
+	coreService := coreapipb.NewCoreServiceClient(conn)
+
+	for _, partyId := range v.agentPubkeys {
+		stReq := &coreapipb.GetSpamStatisticsRequest{PartyId: partyId}
+		res, err := coreService.GetSpamStatistics(context.Background(), stReq)
+		if err != nil {
+			log.Printf("Failed to get spam statistics from core node: %v\n", err)
+			v.HandleVegaCoreReconnect()
+			return
+		}
+
+		powStats := &pow.PowStatistic{
+			PartyId:      partyId,
+			PoWStatistic: res.GetStatistics().GetPow(),
+		}
+
+		v.powStatsOutCh <- powStats
+
 	}
 
-	return &recentBlock{
-		Height:               res.GetHeight(),
-		Hash:                 res.GetHash(),
-		SpamPowHashFunction:  res.GetSpamPowHashFunction(),
-		SpamPowDifficulty:    res.GetSpamPowDifficulty(),
-		SpamPowNumPastBlocks: res.GetSpamPowNumberOfPastBlocks(),
-		SpamPowNumTxPerBlock: res.GetSpamPowNumberOfTxPerBlock(),
-		ChainId:              res.GetChainId(),
-	}
 }
 
-func (s *signer) HandleVegaCoreReconnect() {
+func (v *VegaCoreClient) HandleVegaCoreReconnect() {
 
 	log.Println("Attempting Vega Core reconnect.")
 
-	if s.vegaCoreReconnecting {
+	if v.reconnecting {
 		log.Println("Already reconnecting...")
 		return // Return control to caller
 	}
-	s.vegaCoreReconnecting = true
-	s.vegaCoreReconnChan <- struct{}{}
+	v.reconnecting = true
+	v.reconnChan <- struct{}{}
 
 }
 
-func (s *signer) RunVegaCoreReconnectHandler() {
+func (v *VegaCoreClient) RunVegaCoreReconnectHandler() {
 
 	for {
 		select {
-		case <-s.vegaCoreReconnChan:
+		case <-v.reconnChan:
 			log.Println("Recieved event on Vega Core reconn channel")
 
-			s.vegaCoreAddr = ""
-			for s.vegaCoreAddr == "" {
-				s.TestVegaCoreAddrs()
+			v.grpcAddr = ""
+			ok := false
+			for !ok {
+				ok = v.TestVegaCoreAddrs()
+				if !ok {
+					n := 30
+					log.Printf("Failed to reconnect to a Vega core node. Waiting %v seconds before retry", n)
+					time.Sleep(time.Second * 30)
+				}
 			}
 
 			log.Println("Found available Vega Core API. Finished reconnecting.")
-			s.vegaCoreReconnecting = false
+			v.reconnecting = false
+
+			// Restart the submit tx loop after successful reconnect.
+			v.StartSubmitTxLoop()
 		}
 	}
 

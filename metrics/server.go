@@ -66,6 +66,7 @@ type MetricsEventType int
 
 const (
 	MetricsEventType_Unspecified MetricsEventType = iota
+	MetricsEventType_Strategy
 	MetricsEventType_Agent
 	MetricsEventType_DataEngine
 	MetricsEventType_TradingEngine
@@ -77,13 +78,17 @@ func (m MetricsEventType) String() string {
 	case 0:
 		return "MetricsEventType_Unspecified"
 	case 1:
-		return "MetricsEventType_Agent"
+		return "MetricsEventType_Strategy"
 	case 2:
-		return "MetricsEventType_DataEngine"
+		return "MetricsEventType_Agent"
 	case 3:
+		return "MetricsEventType_DataEngine"
+	case 4:
 		return "MetricsEventType_TradingEngine"
-	default:
+	case 5:
 		return "MetricsEventType_Pow"
+	default:
+		return "MetricsEventType_Unspecified"
 	}
 }
 
@@ -91,10 +96,25 @@ type MetricsEventData interface {
 	isMetricsData()
 }
 
+func (m *StrategyMetrics) isMetricsData()      {}
 func (m *AgentMetrics) isMetricsData()         {}
 func (m *DataEngineMetrics) isMetricsData()    {}
 func (m *TradingEngineMetrics) isMetricsData() {}
 func (m *PowMetrics) isMetricsData()           {}
+
+type StrategyMetrics struct {
+	MarketId                  string
+	BinanceTicker             string
+	Position                  *vegapb.Position
+	SignedExposure            decimal.Decimal
+	VegaBestBid               decimal.Decimal
+	OurBestBid                decimal.Decimal
+	VegaBestAsk               decimal.Decimal
+	OurBestAsk                decimal.Decimal
+	LiveOrdersCount           int
+	MarketDataUpdateCount     int
+	TimeSinceMarketDataUpdate int
+}
 
 type AgentMetrics struct{}
 type DataEngineMetrics struct{}
@@ -155,7 +175,7 @@ func (m *MetricsServer) Init() chan *MetricsEvent {
 	return m.inCh
 }
 
-func StartMetricsApi(metricsCh chan *MetricsState) {
+func StartMetricsApi(metricsCh chan *MetricsEvent) {
 
 	reg := prom.NewRegistry()
 	metrics := &PromMetrics{

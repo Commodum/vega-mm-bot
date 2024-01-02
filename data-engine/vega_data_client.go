@@ -53,7 +53,7 @@ func (v *VegaDataClient) Init(dataStores []*stores.VegaStore) *VegaDataClient {
 	v.storesByPubkey = map[string][]*stores.VegaStore{}
 	v.storesSlice = dataStores
 
-	for _, store := range dataStores {
+	for _, store := range v.storesSlice {
 		marketId, pubkey := store.GetMarketId(), store.GetAgentPubKey()
 
 		v.storesByMarket[marketId] = append(v.storesByMarket[marketId], store)
@@ -68,13 +68,22 @@ func (v *VegaDataClient) Init(dataStores []*stores.VegaStore) *VegaDataClient {
 	v.vegaMarkets = maps.Keys(v.storesByMarket)
 	v.agentPubkeys = maps.Keys(v.storesByPubkey)
 
+	ok := v.testGrpcAddresses()
+	if !ok {
+		log.Fatalf("Failed to connect to a datanode.\n")
+	}
+
 	return v
+}
+
+func (v *VegaDataClient) Start(wg *sync.WaitGroup) {
+	go v.RunVegaClientReconnectHandler()
+	go v.StreamVegaData(wg)
 }
 
 func (vegaClient *VegaDataClient) testGrpcAddresses() (ok bool) {
 
-	// We need to re-write this to handle the case where all datanodes are down and unreachable.
-	// Alternatively, standardize the clients and reconnect handlers with a new API client implementation.
+	log.Printf("Testing datanode gRPC addresses.\n")
 
 	type successfulTest struct {
 		addr      string
@@ -124,6 +133,7 @@ func (vegaClient *VegaDataClient) testGrpcAddresses() (ok bool) {
 
 	if len(successes) == 0 {
 		ok = false
+		vegaClient.grpcAddr = ""
 		return
 	} else {
 		ok = true
@@ -143,13 +153,26 @@ func (vegaClient *VegaDataClient) RunVegaClientReconnectHandler() {
 		select {
 		case <-vegaClient.reconnChan:
 			log.Println("Recieved event on reconn channel")
+
+			vegaClient.grpcAddr = ""
+			ok := false
+			for !ok {
+				ok = vegaClient.testGrpcAddresses()
+				if !ok {
+					n := 30
+					log.Printf("Failed to reconnect to a data node. Waiting %v seconds before retry", n)
+					time.Sleep(time.Second * 30)
+				}
+			}
+
+			vegaClient.reconnecting = false
+
 			wg := &sync.WaitGroup{}
 			wg.Add(1)
 			go vegaClient.StreamVegaData(wg)
 			log.Println("Waiting for new vega data streams")
 			wg.Wait()
-			log.Println("Finished waiting for new vega data streams")
-			vegaClient.reconnecting = false
+			log.Println("Finished reconnecting to a data node.")
 		}
 	}
 }

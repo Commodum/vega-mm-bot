@@ -6,6 +6,7 @@ import (
 	"os"
 	"sync"
 	"vega-mm/metrics"
+	"vega-mm/pow"
 	strats "vega-mm/strategies"
 	"vega-mm/wallets"
 
@@ -57,8 +58,18 @@ func (t *TradingEngine) Init(metricsCh chan *metrics.MetricsEvent) *TradingEngin
 	return t
 }
 
-func (t *TradingEngine) RegisterAgent() {
+func (t *TradingEngine) Start() {
 
+	// To start trading, for each agent we need to:
+	//	- Load decimals.
+	// 	- Update Liquidity Commitments.
+	//	- Run strategies.
+
+	for _, agent := range t.agents {
+		agent.LoadVegaDecimals()
+		agent.UpdateLiquidityCommitments()
+		agent.RunStrategies(t.metricsCh)
+	}
 }
 
 func (t *TradingEngine) LoadStrategies(strategies []strats.Strategy, txBroadcastCh chan *commandspb.Transaction) {
@@ -94,4 +105,28 @@ func (t *TradingEngine) GetStrategies() []strats.Strategy {
 		s = append(s, agent.GetStrategies()...)
 	}
 	return s
+}
+
+func (t *TradingEngine) GetPowStores() map[string]*pow.PowStore {
+	m := map[string]*pow.PowStore{}
+
+	for pubkey, agent := range t.agents {
+		m[pubkey] = agent.GetPowStore()
+	}
+
+	return m
+}
+
+func (t *TradingEngine) GetNumStratsPerAgent() map[string]int {
+	m := map[string]int{}
+
+	for pubkey, agent := range t.agents {
+		m[pubkey] = len(agent.strategies)
+	}
+
+	return m
+}
+
+func (t *TradingEngine) GetNumAgents() int {
+	return len(t.agents)
 }

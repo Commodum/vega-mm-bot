@@ -6,6 +6,7 @@ import (
 	"strings"
 	"vega-mm/data-engine"
 	"vega-mm/metrics"
+	"vega-mm/pow"
 	strats "vega-mm/strategies"
 	"vega-mm/trading-engine"
 
@@ -15,6 +16,7 @@ import (
 	"sync"
 	"syscall"
 
+	vegaApiPb "code.vegaprotocol.io/vega/protos/vega/api/v1"
 	commandspb "code.vegaprotocol.io/vega/protos/vega/commands/v1"
 	"github.com/shopspring/decimal"
 	// "net/http"
@@ -159,18 +161,33 @@ func init() {
 	flag.StringVar(&walletServiceAddr, "wallet-service-addr", defaultWalletServiceAddr, "A vega wallet service address")
 	flag.StringVar(&walletPubkey, "wallet-pubkey", defaultWalletPubkey, "a vega public key")
 	flag.StringVar(&binanceMarkets, "binance-markets", defaultBinanceMarkets, "a comma separated list of Binance markets")
+	flag.Parse()
 
-	txBroadcastCh := make(chan *commandspb.Transaction)
+	// txBroadcastCh := make(chan *commandspb.Transaction)
+	// // powStatsCh := make(chan *vegaApiPb.PoWStatistic)
 
-	port := ":8080"
-	metricsServer := metrics.NewMetricsServer(port)
-	metricsCh := metricsServer.Init()
+	// port := ":8080"
+	// metricsServer := metrics.NewMetricsServer(port)
+	// metricsCh := metricsServer.Init()
 
-	tradingEngine := trading.NewEngine().Init(metricsCh)
-	tradingEngine.LoadStrategies(GetFairgroundStrategies(), txBroadcastCh)
+	// tradingEngine := trading.NewEngine().Init(metricsCh)
+	// tradingEngine.LoadStrategies(GetFairgroundStrategies(), txBroadcastCh)
 
-	dataEngine := data.NewDataEngine().RegisterStrategies(tradingEngine.GetStrategies())
-	dataEngine.Init(binanceWsAddr, strings.Split(vegaCoreAddrs, ","), strings.Split(vegaGrpcAddresses, ","))
+	// powStatsCh := make(chan *pow.PowStatistic, tradingEngine.GetNumAgents())
+
+	// dataEngine := data.NewDataEngine().RegisterStrategies(tradingEngine.GetStrategies())
+	// dataEngine.Init(binanceWsAddr, strings.Split(vegaCoreAddrs, ","), strings.Split(vegaGrpcAddresses, ","), txBroadcastCh, powStatsCh)
+
+	// worker := pow.NewWorker().Init(powStatsCh, tradingEngine.GetNumStratsPerAgent(), tradingEngine.GetPowStores())
+
+	// worker.Start()
+
+	// wg := &sync.WaitGroup{}
+	// wg.Add(1)
+	// dataEngine.Start(wg)
+	// wg.Wait()
+
+	// tradingEngine.Start()
 
 	// In Init, we initialize all the separate engines in the trading system:
 	//
@@ -213,110 +230,142 @@ func main() {
 	// 	http.ListenAndServe("localhost:1111", nil)
 	// }()
 
-	// Get config
-	config := parseFlags()
+	txBroadcastCh := make(chan *commandspb.Transaction)
+	// powStatsCh := make(chan *vegaApiPb.PoWStatistic)
 
-	// agent := NewAgent(walletClient, config)
-	// mnemonic := os.Getenv("FAIRGROUND_MNEMONIC")
-	homePath := os.Getenv("HOME")
-	// mnemonic, err := os.ReadFile(fmt.Sprintf("%v/.config/vega-mm-fairground/embedded-wallet/mnemonic.txt", homePath))
-	mnemonic, err := os.ReadFile(fmt.Sprintf("%v/.config/vega-mm/embedded-wallet/words.txt", homePath))
-	if err != nil {
-		log.Fatalf("Failed to read mnemonic from file: %v", err)
-	}
+	port := ":8080"
+	metricsServer := metrics.NewMetricsServer(port)
+	metricsCh := metricsServer.Init()
 
-	embeddedWallet := newWallet(string(mnemonic))
-	agent := NewAgent(embeddedWallet, config).(*agent)
+	tradingEngine := trading.NewEngine().Init(metricsCh)
+	tradingEngine.LoadStrategies(GetFairgroundStrategies(), txBroadcastCh)
 
-	btcPerpStrategyOpts := &StrategyOpts{
-		marketId:                "4e9081e20e9e81f3e747d42cb0c9b8826454df01899e6027a22e771e19cc79fc",
-		binanceMarket:           "BTCUSDT",
-		targetObligationVolume:  150000, // Minimum 10k on mainnet (min commitment: 500, stakeToCcyVolume: 20)
-		maxProbabilityOfTrading: 0.875,  // Determines where to place the first order in the distribution
-		orderSpacing:            0.0005,
-		orderSizeBase:           1.4,
-		targetVolCoefficient:    1.1, // Aim to quote 1.1x targetObligationVolume on each side
-		numOrdersPerSide:        7,
-	}
+	powStatsCh := make(chan *pow.PowStatistic, tradingEngine.GetNumAgents())
 
-	ethPerpStrategyOpts := &StrategyOpts{
-		marketId:                "e63a37edae8b74599d976f5dedbf3316af82579447f7a08ae0495a021fd44d13",
-		binanceMarket:           "ETHUSDT",
-		targetObligationVolume:  140000, // Minimum 10k on mainnet (min commitment: 500, stakeToCcyVolume: 20)
-		maxProbabilityOfTrading: 0.875,
-		orderSpacing:            0.0005,
-		orderSizeBase:           1.4,
-		targetVolCoefficient:    1.1,
-		numOrdersPerSide:        7,
-	}
+	dataEngine := data.NewDataEngine().RegisterStrategies(tradingEngine.GetStrategies())
+	dataEngine.Init(binanceWsAddr, strings.Split(vegaCoreAddrs, ","), strings.Split(vegaGrpcAddresses, ","), txBroadcastCh, powStatsCh)
 
-	solPerpStrategyOpts := &StrategyOpts{
-		marketId:                "f148741398d6bafafdc384819808a14e07340182455105e280aa0294c92c2e60",
-		binanceMarket:           "SOLUSDT",
-		targetObligationVolume:  75000, // Minimum 10k on mainnet (min commitment: 500, stakeToCcyVolume: 20)
-		maxProbabilityOfTrading: 0.825,
-		orderSpacing:            0.00085,
-		orderSizeBase:           1.75,
-		targetVolCoefficient:    1.1,
-		numOrdersPerSide:        11,
-	}
+	worker := pow.NewWorker().Init(powStatsCh, tradingEngine.GetNumStratsPerAgent(), tradingEngine.GetPowStores())
 
-	linkPerpStrategyOpts := &StrategyOpts{
-		marketId:                "74f8bb5c2236dac8f29ee10c18d70d553b8faa180f288b559ef795d0faeb3607",
-		binanceMarket:           "LINKUSDT",
-		targetObligationVolume:  75000, // Minimum 10k on mainnet (min commitment: 500, stakeToCcyVolume: 20)
-		maxProbabilityOfTrading: 0.825,
-		orderSpacing:            0.00065,
-		orderSizeBase:           1.75,
-		targetVolCoefficient:    1.1,
-		numOrdersPerSide:        8,
-	}
+	worker.Start()
 
-	btcPerpStrategy := NewStrategy(btcPerpStrategyOpts)
-	ethPerpStrategy := NewStrategy(ethPerpStrategyOpts)
-	solPerpStrategy := NewStrategy(solPerpStrategyOpts)
-	linkPerpStrategy := NewStrategy(linkPerpStrategyOpts)
-
-	agent.RegisterStrategy(btcPerpStrategy)
-	agent.RegisterStrategy(ethPerpStrategy)
-	agent.RegisterStrategy(solPerpStrategy)
-	agent.RegisterStrategy(linkPerpStrategy)
-
-	var wg sync.WaitGroup
+	wg := &sync.WaitGroup{}
 	wg.Add(1)
-
-	go agent.signer.RunVegaCoreReconnectHandler()
-
-	go agent.binanceClient.RunBinanceReconnectHandler()
-	go agent.binanceClient.StreamBinanceData()
-
-	go agent.VegaClient().RunVegaClientReconnectHandler()
-	go agent.VegaClient().StreamVegaData(&wg)
-
+	dataEngine.Start(wg)
 	wg.Wait()
 
-	agent.LoadDecimals()
+	tradingEngine.Start()
 
-	agent.UpdateLiquidityCommitment(btcPerpStrategy)
-	agent.UpdateLiquidityCommitment(ethPerpStrategy)
-	agent.UpdateLiquidityCommitment(solPerpStrategy)
-	agent.UpdateLiquidityCommitment(linkPerpStrategy)
+	// --------------------------------------------------------------------------- //
 
-	metricsCh := make(chan *MetricsState)
+	/*
 
-	go agent.RunStrategy(btcPerpStrategy, metricsCh)
-	go agent.RunStrategy(ethPerpStrategy, metricsCh)
-	go agent.RunStrategy(solPerpStrategy, metricsCh)
-	go agent.RunStrategy(linkPerpStrategy, metricsCh)
+		// Get config
+		config := parseFlags()
 
-	go StartMetricsApi(metricsCh)
+		// agent := NewAgent(walletClient, config)
+		// mnemonic := os.Getenv("FAIRGROUND_MNEMONIC")
+		homePath := os.Getenv("HOME")
+		// mnemonic, err := os.ReadFile(fmt.Sprintf("%v/.config/vega-mm-fairground/embedded-wallet/mnemonic.txt", homePath))
+		mnemonic, err := os.ReadFile(fmt.Sprintf("%v/.config/vega-mm/embedded-wallet/words.txt", homePath))
+		if err != nil {
+			log.Fatalf("Failed to read mnemonic from file: %v", err)
+		}
 
-	gracefulStop := make(chan os.Signal, 1)
-	signal.Notify(gracefulStop, syscall.SIGTERM, syscall.SIGINT)
-	<-gracefulStop
+		embeddedWallet := newWallet(string(mnemonic))
+		agent := NewAgent(embeddedWallet, config).(*agent)
 
-	// Should we flatten the inventory at shutdown?
+		btcPerpStrategyOpts := &StrategyOpts{
+			marketId:                "4e9081e20e9e81f3e747d42cb0c9b8826454df01899e6027a22e771e19cc79fc",
+			binanceMarket:           "BTCUSDT",
+			targetObligationVolume:  150000, // Minimum 10k on mainnet (min commitment: 500, stakeToCcyVolume: 20)
+			maxProbabilityOfTrading: 0.875,  // Determines where to place the first order in the distribution
+			orderSpacing:            0.0005,
+			orderSizeBase:           1.4,
+			targetVolCoefficient:    1.1, // Aim to quote 1.1x targetObligationVolume on each side
+			numOrdersPerSide:        7,
+		}
 
-	log.Print("Terminating due to user input.")
+		ethPerpStrategyOpts := &StrategyOpts{
+			marketId:                "e63a37edae8b74599d976f5dedbf3316af82579447f7a08ae0495a021fd44d13",
+			binanceMarket:           "ETHUSDT",
+			targetObligationVolume:  140000, // Minimum 10k on mainnet (min commitment: 500, stakeToCcyVolume: 20)
+			maxProbabilityOfTrading: 0.875,
+			orderSpacing:            0.0005,
+			orderSizeBase:           1.4,
+			targetVolCoefficient:    1.1,
+			numOrdersPerSide:        7,
+		}
+
+		solPerpStrategyOpts := &StrategyOpts{
+			marketId:                "f148741398d6bafafdc384819808a14e07340182455105e280aa0294c92c2e60",
+			binanceMarket:           "SOLUSDT",
+			targetObligationVolume:  75000, // Minimum 10k on mainnet (min commitment: 500, stakeToCcyVolume: 20)
+			maxProbabilityOfTrading: 0.825,
+			orderSpacing:            0.00085,
+			orderSizeBase:           1.75,
+			targetVolCoefficient:    1.1,
+			numOrdersPerSide:        11,
+		}
+
+		linkPerpStrategyOpts := &StrategyOpts{
+			marketId:                "74f8bb5c2236dac8f29ee10c18d70d553b8faa180f288b559ef795d0faeb3607",
+			binanceMarket:           "LINKUSDT",
+			targetObligationVolume:  75000, // Minimum 10k on mainnet (min commitment: 500, stakeToCcyVolume: 20)
+			maxProbabilityOfTrading: 0.825,
+			orderSpacing:            0.00065,
+			orderSizeBase:           1.75,
+			targetVolCoefficient:    1.1,
+			numOrdersPerSide:        8,
+		}
+
+		btcPerpStrategy := NewStrategy(btcPerpStrategyOpts)
+		ethPerpStrategy := NewStrategy(ethPerpStrategyOpts)
+		solPerpStrategy := NewStrategy(solPerpStrategyOpts)
+		linkPerpStrategy := NewStrategy(linkPerpStrategyOpts)
+
+		agent.RegisterStrategy(btcPerpStrategy)
+		agent.RegisterStrategy(ethPerpStrategy)
+		agent.RegisterStrategy(solPerpStrategy)
+		agent.RegisterStrategy(linkPerpStrategy)
+
+		var wg sync.WaitGroup
+		wg.Add(1)
+
+		go agent.signer.RunVegaCoreReconnectHandler()
+
+		go agent.binanceClient.RunBinanceReconnectHandler()
+		go agent.binanceClient.StreamBinanceData()
+
+		go agent.VegaClient().RunVegaClientReconnectHandler()
+		go agent.VegaClient().StreamVegaData(&wg)
+
+		wg.Wait()
+
+		agent.LoadDecimals()
+
+		agent.UpdateLiquidityCommitment(btcPerpStrategy)
+		agent.UpdateLiquidityCommitment(ethPerpStrategy)
+		agent.UpdateLiquidityCommitment(solPerpStrategy)
+		agent.UpdateLiquidityCommitment(linkPerpStrategy)
+
+		metricsCh := make(chan *MetricsState)
+
+		go agent.RunStrategy(btcPerpStrategy, metricsCh)
+		go agent.RunStrategy(ethPerpStrategy, metricsCh)
+		go agent.RunStrategy(solPerpStrategy, metricsCh)
+		go agent.RunStrategy(linkPerpStrategy, metricsCh)
+
+		go StartMetricsApi(metricsCh)
+
+		gracefulStop := make(chan os.Signal, 1)
+		signal.Notify(gracefulStop, syscall.SIGTERM, syscall.SIGINT)
+		<-gracefulStop
+
+		// Should we flatten the inventory at shutdown?
+
+		log.Print("Terminating due to user input.")
+
+	*/
 
 }

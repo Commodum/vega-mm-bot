@@ -177,7 +177,7 @@ func (s *VegaSigner) BuildAndSendTx(inputData *commandspb.InputData) {
 	proofOfWork := &commandspb.ProofOfWork{
 		Tid: pow.TxId, Nonce: pow.Nonce,
 	}
-	s.GetOutChan() <- &commandspb.Transaction{
+	s.txOutCh <- &commandspb.Transaction{
 		Version:   commandspb.TxVersion_TX_VERSION_V3,
 		Signature: signature,
 		Pow:       proofOfWork,
@@ -229,4 +229,8 @@ func (s *VegaSigner) getChainId() string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.chainId
+}
+
+func (s *VegaSigner) GetPowStore() *pow.PowStore {
+	return s.powStore
 }

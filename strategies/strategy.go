@@ -134,7 +134,7 @@ type Strategy interface {
 	AmendLiquidityCommitment()
 	CancelLiquidityCommitment()
 
-	RunStrategy(chan *metrics.MetricsState)
+	RunStrategy(chan *metrics.MetricsEvent)
 
 	SetAgentPubKey(string)
 	GetAgentPubKey() string
@@ -669,7 +669,7 @@ func cdf(m, stddev, x float64) float64 {
 	return 0.5 * math.Erfc(-(math.Log(x)-m)/math.Sqrt(2.0)*stddev)
 }
 
-func (strat *MartingaleStrategy) RunStrategy(metricsCh chan *metrics.MetricsState) {
+func (strat *MartingaleStrategy) RunStrategy(metricsCh chan *metrics.MetricsEvent) {
 
 	for range time.NewTicker(750 * time.Millisecond).C {
 		log.Printf("Executing strategy for %v...", strat.BinanceMarket)
@@ -820,7 +820,20 @@ func (strat *MartingaleStrategy) RunStrategy(metricsCh chan *metrics.MetricsStat
 			)...,
 		)
 
-		state := &metrics.MetricsState{
+		// state := &metrics.MetricsState{
+		// 	MarketId:              marketId,
+		// 	BinanceTicker:         strat.BinanceMarket,
+		// 	Position:              strat.vegaStore.GetPosition(),
+		// 	SignedExposure:        signedExposure,
+		// 	VegaBestBid:           vegaBestBid.Div(strat.d.priceFactor),
+		// 	OurBestBid:            ourBestBid,
+		// 	VegaBestAsk:           vegaBestAsk.Div(strat.d.priceFactor),
+		// 	OurBestAsk:            ourBestAsk,
+		// 	LiveOrdersCount:       len(strat.vegaStore.GetOrders()),
+		// 	MarketDataUpdateCount: int(strat.vegaStore.GetMarketDataUpdateCounter()),
+		// }
+
+		metricsData := &metrics.StrategyMetrics{
 			MarketId:              marketId,
 			BinanceTicker:         strat.BinanceMarket,
 			Position:              strat.vegaStore.GetPosition(),
@@ -833,7 +846,10 @@ func (strat *MartingaleStrategy) RunStrategy(metricsCh chan *metrics.MetricsStat
 			MarketDataUpdateCount: int(strat.vegaStore.GetMarketDataUpdateCounter()),
 		}
 
-		metricsCh <- state
+		metricsCh <- &metrics.MetricsEvent{
+			Type: metrics.MetricsEventType_Strategy,
+			Data: metricsData,
+		}
 
 		batch := commandspb.BatchMarketInstructions{
 			Cancellations: cancellations,

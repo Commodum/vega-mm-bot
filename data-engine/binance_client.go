@@ -68,6 +68,11 @@ func (b *BinanceClient) RunBinanceReconnectHandler() {
 	}
 }
 
+func (b *BinanceClient) Start() {
+	go b.RunBinanceReconnectHandler()
+	go b.StreamBinanceData()
+}
+
 func (b *BinanceClient) StreamBinanceData() {
 
 	delayReconnect := func() {
@@ -94,7 +99,7 @@ func (b *BinanceClient) StreamBinanceData() {
 	// for binanceMarket := range b.markets {
 	// 	reqParams = append(reqParams, fmt.Sprintf("%s@ticker", strings.ToLower(binanceMarket)))
 	// }
-	for binanceMarket := range maps.Keys(b.storesMap) {
+	for _, binanceMarket := range maps.Keys(b.storesMap) {
 		reqParams = append(reqParams, fmt.Sprintf("%s@bookTicker", strings.ToLower(string(binanceMarket))))
 	}
 

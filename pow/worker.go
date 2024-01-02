@@ -17,14 +17,18 @@ import (
 type worker struct {
 	mu sync.RWMutex
 
-	inCh chan *coreapipb.PoWStatistic
+	inCh chan *PowStatistic
 
-	powStats           *coreapipb.PoWStatistic
-	pubkeys            map[uint32]string
+	powStats           map[string]*coreapipb.PoWStatistic
 	numStratsPerPubkey map[string]int
 	blockKeepFraction  float64
 
 	stores map[string]*PowStore
+}
+
+type PowStatistic struct {
+	PartyId string
+	*coreapipb.PoWStatistic
 }
 
 type ProofOfWork struct {
@@ -36,45 +40,37 @@ type ProofOfWork struct {
 	Used        bool
 }
 
-func newWorker() *worker {
+func NewWorker() *worker {
 	return &worker{
 		mu:                sync.RWMutex{},
 		blockKeepFraction: 0.8,
 	}
 }
 
-func (w *worker) Init(inCh chan *coreapipb.PoWStatistic, pubkeys map[uint32]string, numStratsPerPubkey map[string]uint32) {
-
-	// Need to get powStores from the sigers that are assigned to each agent.
-
-	// powStores := map[string]*PowStore{}
-	// for _, key := range maps.Values(pubkeys) {
-	// 	powStores[key] = &PowStore{
-	// 		mu:     sync.RWMutex{},
-	// 		pubKey: key,
-	// 		pows:   map[uint64][]*ProofOfWork{},
-	// 	}
-	// }
-
+func (w *worker) Init(inCh chan *PowStatistic, numStratsPerPubkey map[string]int, powStores map[string]*PowStore) *worker {
+	w.inCh = inCh
+	w.numStratsPerPubkey = numStratsPerPubkey
+	w.stores = powStores
+	return w
 }
 
-func (w *worker) setPowStats(stats *coreapipb.PoWStatistic) {
+func (w *worker) setPowStats(stats *PowStatistic) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	w.powStats = stats
+	w.powStats[stats.PartyId] = stats.PoWStatistic
 }
 
 func (w *worker) Start() {
-
 	// Receive PoW Statistics and generate proofs
 	go func() {
 		for stats := range w.inCh {
+			w.setPowStats(stats)
 			w.UpdatePows(stats)
 		}
 	}()
 }
 
-func (w *worker) UpdatePows(stats *coreapipb.PoWStatistic) {
+func (w *worker) UpdatePows(stats *PowStatistic) {
 
 	// If this is the first PoWStatistic we are receiving since startup we must
 	// track the most recent height for which it is valid and truncate all
@@ -114,27 +110,25 @@ func (w *worker) UpdatePows(stats *coreapipb.PoWStatistic) {
 	// 		 spam statistics for each public key. Because we are
 	//		 sharing one spam statistics response between all keys
 	//		 we cannot make use of the "TransactionsSeen" field.
-	// for i := len(blockStates) - 1; i >= 0; i-- {
-	// 	if blockStates[i].TransactionsSeen != 0 {
-	// 		copy(blockStates[i-1:], blockStates[i:])
-	// 		blockStates = blockStates[:len(blockStates)-1]
-	// 	}
-	// }
-	// log.Printf("Heights after seenTransactions drop: %v", heights)
+	for i := len(blockStates) - 1; i >= 0; i-- {
+		if blockStates[i].TransactionsSeen != 0 {
+			copy(blockStates[i-1:], blockStates[i:])
+			blockStates = blockStates[:len(blockStates)-1]
+		}
+	}
+	log.Printf("Heights after seenTransactions drop: %v", heights)
 
-	// Check max height for current PoWs
+	// Check max height for agent pow store
 	var mostRecentStoreHeight uint64
 	w.mu.RLock()
-	pubkeys := maps.Keys(w.stores)
-	for _, pubkey := range pubkeys {
-		maxHeight := w.stores[pubkey].GetMaxHeight()
-		if mostRecentStoreHeight < maxHeight {
-			mostRecentStoreHeight = maxHeight
-		}
+	pubkey := stats.PartyId
+	maxHeight := w.stores[pubkey].GetMaxHeight()
+	if mostRecentStoreHeight < maxHeight {
+		mostRecentStoreHeight = maxHeight
 	}
 	w.mu.RUnlock()
 
-	w.GeneratePows(blockStates, pubkeys, mostRecentStoreHeight)
+	w.GeneratePows(blockStates, pubkey, mostRecentStoreHeight)
 
 	w.PrunePowStores(blockStates[0].BlockHeight)
 
@@ -143,7 +137,7 @@ func (w *worker) UpdatePows(stats *coreapipb.PoWStatistic) {
 // Generates two proofs of work for each pubkey at each height. If an agent will be submitting
 // two or more transactions per block the this will need a rafactor to generate proofs
 // of a higher difficulty.
-func (w *worker) GeneratePows(blockStates []*coreapipb.PoWBlockState, pubkeys []string, mostRecentStoreHeight uint64) {
+func (w *worker) GeneratePows(blockStates []*coreapipb.PoWBlockState, pubkey string, mostRecentStoreHeight uint64) {
 
 	numProofsPerStrat := 2
 
@@ -152,54 +146,49 @@ func (w *worker) GeneratePows(blockStates []*coreapipb.PoWBlockState, pubkeys []
 		slice []*ProofOfWork
 	}
 
-	for _, pubkey := range pubkeys {
-		numStrats := w.numStratsPerPubkey[pubkey]
-		go func(pubkey string, numStrats int) {
-			wg := sync.WaitGroup{}
-			buf := &powBuffer{
-				mu:    sync.RWMutex{},
-				slice: []*ProofOfWork{},
-			}
-
-			for _, blockState := range blockStates {
-				if blockState.BlockHeight <= mostRecentStoreHeight {
-					continue
-				}
-				wg.Add(1)
-				go func(blockState *coreapipb.PoWBlockState, buf *powBuffer) {
-					for i := 0; i < numProofsPerStrat*int(numStrats); i++ {
-						//difficulty := uint(blockState.Difficulty + uint64(math.Floor(float64(i/lb.SpamPowNumTxPerBlock))))
-						difficulty := uint(blockState.Difficulty + uint64(math.Floor(float64(i/int(blockState.TxPerBlock)))))
-						// difficulty := uint(blockState.Difficulty)
-						// log.Printf("Generating proof at index %v, with difficulty %v, at height %v\n", i, difficulty, lb.Height)
-						txId, _ := uuid.NewRandom()
-						nonce, _, _ := crypto.PoW(blockState.BlockHash, txId.String(), difficulty, blockState.HashFunction)
-						pow := &ProofOfWork{
-							BlockHash:   blockState.BlockHash,
-							BlockHeight: blockState.BlockHeight,
-							Difficulty:  difficulty,
-							Nonce:       nonce,
-							TxId:        txId.String(),
-							Used:        false,
-						}
-
-						buf.mu.Lock()
-						buf.slice = append(buf.slice, pow)
-						buf.mu.Unlock()
-					}
-
-					wg.Done()
-				}(blockState, buf)
-			}
-
-			wg.Wait()
-
-			// Flush powBuffer
-			w.mu.Lock()
-			w.stores[pubkey].SetPows(buf.slice)
-			w.mu.Unlock()
-		}(pubkey, numStrats)
+	numStrats := w.numStratsPerPubkey[pubkey]
+	wg := sync.WaitGroup{}
+	buf := &powBuffer{
+		mu:    sync.RWMutex{},
+		slice: []*ProofOfWork{},
 	}
+
+	for _, blockState := range blockStates {
+		if blockState.BlockHeight <= mostRecentStoreHeight {
+			continue
+		}
+		wg.Add(1)
+		go func(blockState *coreapipb.PoWBlockState, buf *powBuffer) {
+			for i := 0; i < numProofsPerStrat*int(numStrats); i++ {
+				//difficulty := uint(blockState.Difficulty + uint64(math.Floor(float64(i/lb.SpamPowNumTxPerBlock))))
+				difficulty := uint(blockState.Difficulty + uint64(math.Floor(float64((i+int(blockState.TransactionsSeen))/int(blockState.TxPerBlock)))))
+				// log.Printf("Generating proof at index %v, with difficulty %v, at height %v\n", i, difficulty, lb.Height)
+				txId, _ := uuid.NewRandom()
+				nonce, _, _ := crypto.PoW(blockState.BlockHash, txId.String(), difficulty, blockState.HashFunction)
+				pow := &ProofOfWork{
+					BlockHash:   blockState.BlockHash,
+					BlockHeight: blockState.BlockHeight,
+					Difficulty:  difficulty,
+					Nonce:       nonce,
+					TxId:        txId.String(),
+					Used:        false,
+				}
+
+				buf.mu.Lock()
+				buf.slice = append(buf.slice, pow)
+				buf.mu.Unlock()
+			}
+
+			wg.Done()
+		}(blockState, buf)
+	}
+
+	wg.Wait()
+
+	// Flush powBuffer
+	w.mu.Lock()
+	w.stores[pubkey].SetPows(buf.slice)
+	w.mu.Unlock()
 
 }
 

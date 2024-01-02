@@ -3,6 +3,8 @@ package trading
 import (
 	"log"
 	"vega-mm/metrics"
+	"vega-mm/pow"
+
 	// "vega-mm/pow"
 	"vega-mm/strategies"
 	"vega-mm/wallets"
@@ -89,7 +91,7 @@ func (agent *Agent) UpdateLiquidityCommitment(strat strats.Strategy) {
 	}
 }
 
-func (a *Agent) RunStrategies(metricsCh chan *metrics.MetricsState) {
+func (a *Agent) RunStrategies(metricsCh chan *metrics.MetricsEvent) {
 	for _, strat := range maps.Values(a.strategies) {
 		go strat.RunStrategy(metricsCh)
 	}
@@ -101,4 +103,8 @@ func (a *Agent) GetStrategies() []strats.Strategy {
 		s = append(s, strat)
 	}
 	return s
+}
+
+func (a *Agent) GetPowStore() *pow.PowStore {
+	return a.signer.GetPowStore()
 }
