@@ -41,7 +41,7 @@ func NewDataEngine() *DataEngine {
 	}
 }
 
-func (d *DataEngine) Init(binanceWsAddr string, vegaCoreGrpcAddrs []string, vegaDataGrpcAddrs []string, txBroadcastCh chan *commandspb.Transaction, powStatsCh chan *pow.PowStatistic) *DataEngine {
+func (d *DataEngine) Init(binanceWsAddr string, vegaCoreGrpcAddrs []string, vegaDataGrpcAddrs []string, txBroadcastCh chan *commandspb.Transaction, recentBlockCh chan *pow.RecentBlock) *DataEngine {
 
 	// Init data engine.
 	//	- Pass API endpoints from config.
@@ -49,7 +49,7 @@ func (d *DataEngine) Init(binanceWsAddr string, vegaCoreGrpcAddrs []string, vega
 
 	d.binanceClient = NewBinanceClient(binanceWsAddr).Init(d.binanceStores)
 	d.vegaDataClient = NewVegaDataClient(vegaDataGrpcAddrs).Init(d.vegaStores)
-	d.vegaCoreClient = NewVegaCoreClient(vegaCoreGrpcAddrs).Init(d.agentPubkeys, txBroadcastCh, powStatsCh)
+	d.vegaCoreClient = NewVegaCoreClient(vegaCoreGrpcAddrs).Init(d.agentPubkeys, txBroadcastCh, recentBlockCh)
 
 	return d
 }

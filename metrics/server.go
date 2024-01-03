@@ -13,55 +13,6 @@ import (
 	// vegapb "vega-mm/protos/vega"
 )
 
-type MetricsState struct {
-	MarketId                  string
-	BinanceTicker             string
-	Position                  *vegapb.Position
-	SignedExposure            decimal.Decimal
-	VegaBestBid               decimal.Decimal
-	OurBestBid                decimal.Decimal
-	VegaBestAsk               decimal.Decimal
-	OurBestAsk                decimal.Decimal
-	LiveOrdersCount           int
-	MarketDataUpdateCount     int
-	TimeSinceMarketDataUpdate int
-}
-
-// The PromMetrics struct will contain all prom metrics available for registering
-type PromMetrics struct {
-	SignedExposure            prom.Gauge
-	VegaBestBid               prom.Gauge
-	OurBestBid                prom.Gauge
-	VegaBestAsk               prom.Gauge
-	OurBestAsk                prom.Gauge
-	LiveOrderCount            prom.Gauge
-	CumulativeOrderCount      prom.Counter
-	MarketDataUpdateCount     prom.Gauge
-	TimeSinceMarketDataUpdate prom.Gauge
-
-	// SignedExposure            *prom.GaugeVec
-	// VegaBestBid               *prom.GaugeVec
-	// OurBestBid                *prom.GaugeVec
-	// VegaBestAsk               *prom.GaugeVec
-	// OurBestAsk                *prom.GaugeVec
-	// LiveOrderCount            *prom.GaugeVec
-	// CumulativeOrderCount      *prom.CounterVec
-	// MarketDataUpdateCount     *prom.GaugeVec
-	// TimeSinceMarketDataUpdate *prom.GaugeVec
-}
-
-type PromMetricVectors struct {
-	SignedExposure            *prom.GaugeVec
-	VegaBestBid               *prom.GaugeVec
-	OurBestBid                *prom.GaugeVec
-	VegaBestAsk               *prom.GaugeVec
-	OurBestAsk                *prom.GaugeVec
-	LiveOrderCount            *prom.GaugeVec
-	CumulativeOrderCount      *prom.CounterVec
-	MarketDataUpdateCount     *prom.GaugeVec
-	TimeSinceMarketDataUpdate *prom.GaugeVec
-}
-
 type MetricsEventType int
 
 const (
@@ -96,15 +47,16 @@ type MetricsEventData interface {
 	isMetricsData()
 }
 
-func (m *StrategyMetrics) isMetricsData()      {}
-func (m *AgentMetrics) isMetricsData()         {}
-func (m *DataEngineMetrics) isMetricsData()    {}
-func (m *TradingEngineMetrics) isMetricsData() {}
-func (m *PowMetrics) isMetricsData()           {}
+func (m *StrategyMetricsData) isMetricsData()      {}
+func (m *AgentMetricsData) isMetricsData()         {}
+func (m *DataEngineMetricsData) isMetricsData()    {}
+func (m *TradingEngineMetricsData) isMetricsData() {}
+func (m *PowMetricsData) isMetricsData()           {}
 
-type StrategyMetrics struct {
+type StrategyMetricsData struct {
 	MarketId                  string
 	BinanceTicker             string
+	AgentPubkey               string
 	Position                  *vegapb.Position
 	SignedExposure            decimal.Decimal
 	VegaBestBid               decimal.Decimal
@@ -116,10 +68,22 @@ type StrategyMetrics struct {
 	TimeSinceMarketDataUpdate int
 }
 
-type AgentMetrics struct{}
-type DataEngineMetrics struct{}
-type TradingEngineMetrics struct{}
-type PowMetrics struct{}
+type AgentMetricsData struct{}
+type DataEngineMetricsData struct{}
+type TradingEngineMetricsData struct{}
+type PowMetricsData struct{}
+
+type StrategyMetrics struct {
+	SignedExposure            *prom.GaugeVec
+	VegaBestBid               *prom.GaugeVec
+	OurBestBid                *prom.GaugeVec
+	VegaBestAsk               *prom.GaugeVec
+	OurBestAsk                *prom.GaugeVec
+	LiveOrderCount            *prom.GaugeVec
+	CumulativeOrderCount      *prom.CounterVec
+	MarketDataUpdateCount     *prom.GaugeVec
+	TimeSinceMarketDataUpdate *prom.GaugeVec
+}
 
 type MetricsEvent struct {
 	Type MetricsEventType
@@ -134,190 +98,151 @@ func (m *MetricsEvent) GetData() MetricsEventData {
 	return m.Data
 }
 
-func (m *MetricsEvent) HandleData(promMetrics *PromMetrics) {
+func (m *MetricsServer) HandleEvent(evt *MetricsEvent) {
 
-	evtType := m.GetType()
-	data := m.GetData()
+	evtType := evt.GetType()
+	data := evt.GetData()
 
 	switch evtType {
+	case MetricsEventType_Strategy:
+		m.handleStrategyMetricsData(data.(*StrategyMetricsData))
 	case MetricsEventType_Agent:
-		data = data.(*AgentMetrics)
-		// promMetrics.SignedExposure.Set(0.5)
+		data = data.(*AgentMetricsData)
+		log.Printf("No handling implemented for event of type: %v", evtType.String())
 	case MetricsEventType_DataEngine:
-		data = data.(*DataEngineMetrics)
-
+		data = data.(*DataEngineMetricsData)
+		log.Printf("No handling implemented for event of type: %v", evtType.String())
 	case MetricsEventType_TradingEngine:
-		data = data.(*TradingEngineMetrics)
-
+		data = data.(*TradingEngineMetricsData)
+		log.Printf("No handling implemented for event of type: %v", evtType.String())
 	case MetricsEventType_Pow:
-		data = data.(*PowMetrics)
-
+		data = data.(*PowMetricsData)
+		log.Printf("No handling implemented for event of type: %v", evtType.String())
 	default:
 		log.Printf("Unknown Metrics Event Type received: %v", evtType.String())
 	}
 }
 
 type MetricsServer struct {
-	Port string
-	inCh chan *MetricsEvent
+	Port     string
+	inCh     chan *MetricsEvent
+	registry *prom.Registry
+
+	strategyMetrics *StrategyMetrics
 }
 
 func NewMetricsServer(port string) *MetricsServer {
 	return &MetricsServer{
-		Port: port,
-		inCh: make(chan *MetricsEvent),
+		Port:     port,
+		inCh:     make(chan *MetricsEvent),
+		registry: prom.NewRegistry(),
 	}
 }
 
 func (m *MetricsServer) Init() chan *MetricsEvent {
-	// Registers Prom Metrics with a registry
+	m.SetMetrics()
+
+	m.RegisterStrategyMetrics()
 
 	return m.inCh
 }
 
-func StartMetricsApi(metricsCh chan *MetricsEvent) {
+func (m *MetricsServer) Start() {
 
-	reg := prom.NewRegistry()
-	metrics := &PromMetrics{
-		SignedExposure: prom.NewGauge(prom.GaugeOpts{
-			Name: "signed_exposure",
-			Help: "Our current signed exposure in the base asset of the market. +ve means Long, -ve means Short",
-		}),
-		VegaBestBid: prom.NewGauge(prom.GaugeOpts{
-			Name: "vega_best_bid",
-			Help: "The highest bid in the order book",
-		}),
-		OurBestBid: prom.NewGauge(prom.GaugeOpts{
-			Name: "our_best_bid",
-			Help: "Our highest bid in the order book",
-		}),
-		VegaBestAsk: prom.NewGauge(prom.GaugeOpts{
-			Name: "vega_best_ask",
-			Help: "The lowest ask in the order book",
-		}),
-		OurBestAsk: prom.NewGauge(prom.GaugeOpts{
-			Name: "our_best_ask",
-			Help: "Our lowest ask in the order book",
-		}),
-		LiveOrderCount: prom.NewGauge(prom.GaugeOpts{
-			Name: "live_order_count",
-			Help: "The number of live orders we have placed in the order book",
-		}),
-		CumulativeOrderCount: prom.NewCounter(prom.CounterOpts{
-			Name: "cumulative_order_count",
-			Help: "A monotonically increasing count of the number of orders successfully placed",
-		}),
-		MarketDataUpdateCount: prom.NewGauge(prom.GaugeOpts{
-			Name: "market_data_update_count",
-			Help: "A monotonically increasing count of the number of times market data has been updated",
-		}),
-	}
+	go func() {
+		for evt := range m.inCh {
+			m.HandleEvent(evt)
+		}
+	}()
 
-	_ = metrics // Keep compiler happy
+	http.Handle("/metrics", promhttp.HandlerFor(m.registry, promhttp.HandlerOpts{Registry: m.registry}))
+	log.Fatal(http.ListenAndServe(m.Port, nil))
+}
 
-	metricVecs := &PromMetricVectors{
+func (m *MetricsServer) SetMetrics() {
+	m.strategyMetrics = &StrategyMetrics{
 		SignedExposure: prom.NewGaugeVec(prom.GaugeOpts{
 			Namespace: "vega_mm",
-			Name:      "signed_exposure_vector",
+			Name:      "signed_exposure",
 			Help:      "Our current signed exposure in the base asset of the market. +ve means Long, -ve means Short",
 		}, []string{
-			"marketId",
+			"ticker", "pubkey",
 		}),
 		VegaBestBid: prom.NewGaugeVec(prom.GaugeOpts{
 			Namespace: "vega_mm",
 			Name:      "vega_best_bid",
-			Help:      "The highest bid in the order book",
+			Help:      "The highest bid in the book on Vega for this market",
 		}, []string{
-			"marketId",
+			"ticker", "pubkey",
 		}),
 		OurBestBid: prom.NewGaugeVec(prom.GaugeOpts{
 			Namespace: "vega_mm",
 			Name:      "our_best_bid",
-			Help:      "Our highest bid in the order book",
+			Help:      "Our highest bid in the book on Vega for this market",
 		}, []string{
-			"marketId",
+			"ticker", "pubkey",
 		}),
 		VegaBestAsk: prom.NewGaugeVec(prom.GaugeOpts{
 			Namespace: "vega_mm",
 			Name:      "vega_best_ask",
 			Help:      "The lowest ask in the order book",
 		}, []string{
-			"marketId",
+			"ticker", "pubkey",
 		}),
 		OurBestAsk: prom.NewGaugeVec(prom.GaugeOpts{
 			Namespace: "vega_mm",
 			Name:      "our_best_ask",
 			Help:      "Our lowest ask in the order book",
 		}, []string{
-			"marketId",
+			"ticker", "pubkey",
 		}),
 		LiveOrderCount: prom.NewGaugeVec(prom.GaugeOpts{
 			Namespace: "vega_mm",
 			Name:      "live_order_count",
 			Help:      "The number of live orders we have placed in the order book",
 		}, []string{
-			"marketId",
+			"ticker", "pubkey",
 		}),
 		CumulativeOrderCount: prom.NewCounterVec(prom.CounterOpts{
 			Namespace: "vega_mm",
 			Name:      "cumulative_order_count",
 			Help:      "A monotonically increasing count of the number of orders successfully placed",
 		}, []string{
-			"marketId",
+			"ticker", "pubkey",
 		}),
 		MarketDataUpdateCount: prom.NewGaugeVec(prom.GaugeOpts{
 			Namespace: "vega_mm",
 			Name:      "market_data_update_count",
 			Help:      "A monotonically increasing count of the number of times market data has been updated",
 		}, []string{
-			"marketId",
+			"ticker", "pubkey",
 		}),
 	}
+}
 
-	reg.MustRegister(metricVecs.SignedExposure)
-	reg.MustRegister(metricVecs.VegaBestBid)
-	reg.MustRegister(metricVecs.OurBestBid)
-	reg.MustRegister(metricVecs.VegaBestAsk)
-	reg.MustRegister(metricVecs.OurBestAsk)
-	reg.MustRegister(metricVecs.LiveOrderCount)
-	reg.MustRegister(metricVecs.CumulativeOrderCount)
-	reg.MustRegister(metricVecs.MarketDataUpdateCount)
+func (m *MetricsServer) GetStrategyMetrics() *StrategyMetrics {
+	return m.strategyMetrics
+}
 
-	var state *MetricsState
-	go func() {
-		for {
-			select {
-			case state = <-metricsCh:
+func (m *MetricsServer) RegisterStrategyMetrics() {
+	m.registry.MustRegister(m.strategyMetrics.SignedExposure)
+	m.registry.MustRegister(m.strategyMetrics.VegaBestBid)
+	m.registry.MustRegister(m.strategyMetrics.OurBestBid)
+	m.registry.MustRegister(m.strategyMetrics.VegaBestAsk)
+	m.registry.MustRegister(m.strategyMetrics.OurBestAsk)
+	m.registry.MustRegister(m.strategyMetrics.LiveOrderCount)
+	m.registry.MustRegister(m.strategyMetrics.CumulativeOrderCount)
+	m.registry.MustRegister(m.strategyMetrics.MarketDataUpdateCount)
+}
 
-				metricVecs.SignedExposure.With(prom.Labels{"marketId": state.MarketId, "binanceTicker": state.BinanceTicker}).Set(state.SignedExposure.InexactFloat64())
-				metricVecs.VegaBestBid.With(prom.Labels{"marketId": state.MarketId, "binanceTicker": state.BinanceTicker}).Set(state.VegaBestBid.InexactFloat64())
-				metricVecs.OurBestBid.With(prom.Labels{"marketId": state.MarketId, "binanceTicker": state.BinanceTicker}).Set(state.OurBestBid.InexactFloat64())
-				metricVecs.VegaBestAsk.With(prom.Labels{"marketId": state.MarketId, "binanceTicker": state.BinanceTicker}).Set(state.VegaBestAsk.InexactFloat64())
-				metricVecs.OurBestAsk.With(prom.Labels{"marketId": state.MarketId, "binanceTicker": state.BinanceTicker}).Set(state.OurBestAsk.InexactFloat64())
-				metricVecs.LiveOrderCount.With(prom.Labels{"marketId": state.MarketId, "binanceTicker": state.BinanceTicker}).Set(float64(state.LiveOrdersCount))
-				metricVecs.CumulativeOrderCount.With(prom.Labels{"marketId": state.MarketId, "binanceTicker": state.BinanceTicker}).Add(float64(state.LiveOrdersCount))
-				metricVecs.MarketDataUpdateCount.With(prom.Labels{"marketId": state.MarketId, "binanceTicker": state.BinanceTicker}).Set(float64(state.MarketDataUpdateCount))
-
-				// metrics.SignedExposure.Set(state.SignedExposure.InexactFloat64())
-				// metrics.VegaBestBid.Set(state.VegaBestBid.InexactFloat64())
-				// metrics.OurBestBid.Set(state.OurBestBid.InexactFloat64())
-				// metrics.VegaBestAsk.Set(state.VegaBestAsk.InexactFloat64())
-				// metrics.OurBestAsk.Set(state.OurBestAsk.InexactFloat64())
-				// metrics.LiveOrderCount.Set(float64(state.LiveOrdersCount))
-				// metrics.CumulativeOrderCount.Add(float64(state.LiveOrdersCount))
-				// metrics.MarketDataUpdateCount.Set(float64(state.MarketDataUpdateCount))
-			}
-		}
-	}()
-
-	// http.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
-	// 	out, _ := json.MarshalIndent(&metrics, "", "    ")
-	// 	fmt.Fprintf(w, "%v", string(out))
-	// })
-
-	http.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{Registry: reg}))
-	log.Fatal(http.ListenAndServe(":8080", nil))
-
-	// Fairground
-	// log.Fatal(http.ListenAndServe(":8079", nil))
+func (m *MetricsServer) handleStrategyMetricsData(data *StrategyMetricsData) {
+	metrics := m.GetStrategyMetrics()
+	metrics.SignedExposure.With(prom.Labels{"ticker": data.BinanceTicker, "pubkey": data.AgentPubkey}).Set(data.SignedExposure.InexactFloat64())
+	metrics.VegaBestBid.With(prom.Labels{"ticker": data.BinanceTicker, "pubkey": data.AgentPubkey}).Set(data.VegaBestBid.InexactFloat64())
+	metrics.OurBestBid.With(prom.Labels{"ticker": data.BinanceTicker, "pubkey": data.AgentPubkey}).Set(data.OurBestBid.InexactFloat64())
+	metrics.VegaBestAsk.With(prom.Labels{"ticker": data.BinanceTicker, "pubkey": data.AgentPubkey}).Set(data.VegaBestAsk.InexactFloat64())
+	metrics.OurBestAsk.With(prom.Labels{"ticker": data.BinanceTicker, "pubkey": data.AgentPubkey}).Set(data.OurBestAsk.InexactFloat64())
+	metrics.LiveOrderCount.With(prom.Labels{"ticker": data.BinanceTicker, "pubkey": data.AgentPubkey}).Set(float64(data.LiveOrdersCount))
+	metrics.CumulativeOrderCount.With(prom.Labels{"ticker": data.BinanceTicker, "pubkey": data.AgentPubkey}).Add(float64(data.LiveOrdersCount))
+	metrics.MarketDataUpdateCount.With(prom.Labels{"ticker": data.BinanceTicker, "pubkey": data.AgentPubkey}).Set(float64(data.MarketDataUpdateCount))
 }

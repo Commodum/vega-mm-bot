@@ -55,17 +55,25 @@ func (t *TradingEngine) Init(metricsCh chan *metrics.MetricsEvent) *TradingEngin
 	t.embeddedVegaWallet = wallets.NewWallet(string(mnemonic))
 	t.metricsCh = metricsCh
 
+	// kp2 := t.embeddedVegaWallet.GetKeyPair(2)
+	// kp3 := t.embeddedVegaWallet.GetKeyPair(3)
+	// kp4 := t.embeddedVegaWallet.GetKeyPair(4)
+
+	// os.Exit(0)
+
 	return t
 }
 
 func (t *TradingEngine) Start() {
 
 	// To start trading, for each agent we need to:
+	//	- Start the signer.
 	//	- Load decimals.
 	// 	- Update Liquidity Commitments.
 	//	- Run strategies.
 
 	for _, agent := range t.agents {
+		agent.signer.Start()
 		agent.LoadVegaDecimals()
 		agent.UpdateLiquidityCommitments()
 		agent.RunStrategies(t.metricsCh)

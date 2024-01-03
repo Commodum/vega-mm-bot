@@ -16,7 +16,7 @@ import (
 	"sync"
 	"syscall"
 
-	vegaApiPb "code.vegaprotocol.io/vega/protos/vega/api/v1"
+	// vegaApiPb "code.vegaprotocol.io/vega/protos/vega/api/v1"
 	commandspb "code.vegaprotocol.io/vega/protos/vega/commands/v1"
 	"github.com/shopspring/decimal"
 	// "net/http"
@@ -63,7 +63,7 @@ func GetFairgroundStrategies() []strats.Strategy {
 			BinanceMarket:          "BTCUSDT",
 			NumOrdersPerSide:       5,
 			LiquidityCommitment:    true,
-			TargetObligationVolume: decimal.NewFromFloat(1.8),
+			TargetObligationVolume: decimal.NewFromInt(10000),
 			TargetVolCoefficient:   decimal.NewFromFloat(1.2),
 		},
 		Specific: &strats.MartingaleOpts{
@@ -130,24 +130,81 @@ func GetMainnetStrategies() []strats.Strategy {
 
 	btcMartingaleStrategyOpts := &strats.StrategyOpts[strats.Martingale]{
 		General: &strats.GeneralOpts{
-			AgentKeyPairIdx:        1,
+			AgentKeyPairIdx:        2,
 			VegaMarketId:           "4e9081e20e9e81f3e747d42cb0c9b8826454df01899e6027a22e771e19cc79fc",
 			BinanceMarket:          "BTCUSDT",
-			NumOrdersPerSide:       5,
-			LiquidityCommitment:    true,
-			TargetObligationVolume: decimal.NewFromFloat(1.8),
+			NumOrdersPerSide:       6,
+			LiquidityCommitment:    false,
+			TargetObligationVolume: decimal.NewFromInt(5000),
 			TargetVolCoefficient:   decimal.NewFromFloat(1.2),
 		},
 		Specific: &strats.MartingaleOpts{
-			MaxProbabilityOfTrading: decimal.NewFromFloat(0.85),
+			MaxProbabilityOfTrading: decimal.NewFromFloat(0.2),
+			OrderSpacing:            decimal.NewFromFloat(0.0005),
+			OrderSizeBase:           decimal.NewFromFloat(2),
+		},
+	}
+
+	ethMartingaleStrategyOpts := &strats.StrategyOpts[strats.Martingale]{
+		General: &strats.GeneralOpts{
+			AgentKeyPairIdx:        2,
+			VegaMarketId:           "e63a37edae8b74599d976f5dedbf3316af82579447f7a08ae0495a021fd44d13",
+			BinanceMarket:          "ETHUSDT",
+			NumOrdersPerSide:       6,
+			LiquidityCommitment:    false,
+			TargetObligationVolume: decimal.NewFromInt(5000),
+			TargetVolCoefficient:   decimal.NewFromFloat(1.2),
+		},
+		Specific: &strats.MartingaleOpts{
+			MaxProbabilityOfTrading: decimal.NewFromFloat(0.2),
+			OrderSpacing:            decimal.NewFromFloat(0.0005),
+			OrderSizeBase:           decimal.NewFromFloat(2),
+		},
+	}
+
+	solMartingaleStrategyOpts := &strats.StrategyOpts[strats.Martingale]{
+		General: &strats.GeneralOpts{
+			AgentKeyPairIdx:        3,
+			VegaMarketId:           "f148741398d6bafafdc384819808a14e07340182455105e280aa0294c92c2e60",
+			BinanceMarket:          "SOLUSDT",
+			NumOrdersPerSide:       6,
+			LiquidityCommitment:    false,
+			TargetObligationVolume: decimal.NewFromInt(5000),
+			TargetVolCoefficient:   decimal.NewFromFloat(1.2),
+		},
+		Specific: &strats.MartingaleOpts{
+			MaxProbabilityOfTrading: decimal.NewFromFloat(0.2),
+			OrderSpacing:            decimal.NewFromFloat(0.0005),
+			OrderSizeBase:           decimal.NewFromFloat(2),
+		},
+	}
+
+	linkMartingaleStrategyOpts := &strats.StrategyOpts[strats.Martingale]{
+		General: &strats.GeneralOpts{
+			AgentKeyPairIdx:        4,
+			VegaMarketId:           "74f8bb5c2236dac8f29ee10c18d70d553b8faa180f288b559ef795d0faeb3607",
+			BinanceMarket:          "LINKUSDT",
+			NumOrdersPerSide:       6,
+			LiquidityCommitment:    false,
+			TargetObligationVolume: decimal.NewFromInt(5000),
+			TargetVolCoefficient:   decimal.NewFromFloat(1.2),
+		},
+		Specific: &strats.MartingaleOpts{
+			MaxProbabilityOfTrading: decimal.NewFromFloat(0.2),
 			OrderSpacing:            decimal.NewFromFloat(0.0005),
 			OrderSizeBase:           decimal.NewFromFloat(2),
 		},
 	}
 
 	btcMartingaleStrategy := strats.NewMartingaleStrategy(btcMartingaleStrategyOpts)
+	ethMartingaleStrategy := strats.NewMartingaleStrategy(ethMartingaleStrategyOpts)
+	solMartingaleStrategy := strats.NewMartingaleStrategy(solMartingaleStrategyOpts)
+	linkMartingaleStrategy := strats.NewMartingaleStrategy(linkMartingaleStrategyOpts)
 
 	s = append(s, btcMartingaleStrategy)
+	s = append(s, ethMartingaleStrategy)
+	s = append(s, solMartingaleStrategy)
+	s = append(s, linkMartingaleStrategy)
 
 	return s
 }
@@ -230,22 +287,30 @@ func main() {
 	// 	http.ListenAndServe("localhost:1111", nil)
 	// }()
 
-	txBroadcastCh := make(chan *commandspb.Transaction)
-	// powStatsCh := make(chan *vegaApiPb.PoWStatistic)
+	// ---------- MAINNET ---------- //
+	strategies := GetMainnetStrategies()
+	// metricsPort := ":8080"
+	// ----------------------------- //
 
-	port := ":8080"
-	metricsServer := metrics.NewMetricsServer(port)
+	// ---------- FAIRGROUND ---------- //
+	// strategies := GetFairgroundStrategies()
+	metricsPort := ":8079"
+	// -------------------------------- //
+
+	txBroadcastCh := make(chan *commandspb.Transaction)
+
+	metricsServer := metrics.NewMetricsServer(metricsPort)
 	metricsCh := metricsServer.Init()
 
 	tradingEngine := trading.NewEngine().Init(metricsCh)
-	tradingEngine.LoadStrategies(GetFairgroundStrategies(), txBroadcastCh)
+	tradingEngine.LoadStrategies(strategies, txBroadcastCh)
 
-	powStatsCh := make(chan *pow.PowStatistic, tradingEngine.GetNumAgents())
+	recentBlockCh := make(chan *pow.RecentBlock)
 
 	dataEngine := data.NewDataEngine().RegisterStrategies(tradingEngine.GetStrategies())
-	dataEngine.Init(binanceWsAddr, strings.Split(vegaCoreAddrs, ","), strings.Split(vegaGrpcAddresses, ","), txBroadcastCh, powStatsCh)
+	dataEngine.Init(binanceWsAddr, strings.Split(vegaCoreAddrs, ","), strings.Split(vegaGrpcAddresses, ","), txBroadcastCh, recentBlockCh)
 
-	worker := pow.NewWorker().Init(powStatsCh, tradingEngine.GetNumStratsPerAgent(), tradingEngine.GetPowStores())
+	worker := pow.NewWorker().Init(recentBlockCh, tradingEngine.GetNumStratsPerAgent(), tradingEngine.GetPowStores())
 
 	worker.Start()
 
@@ -255,6 +320,15 @@ func main() {
 	wg.Wait()
 
 	tradingEngine.Start()
+	metricsServer.Start()
+
+	gracefulStop := make(chan os.Signal, 1)
+	signal.Notify(gracefulStop, syscall.SIGTERM, syscall.SIGINT)
+	<-gracefulStop
+
+	// Should we flatten the inventory at shutdown?
+
+	log.Print("Terminating due to user input.")
 
 	// --------------------------------------------------------------------------- //
 

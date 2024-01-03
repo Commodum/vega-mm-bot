@@ -10,6 +10,7 @@ import (
 	"math/rand"
 	"strings"
 	"sync"
+	"time"
 	"vega-mm/pow"
 
 	commandspb "code.vegaprotocol.io/vega/protos/vega/commands/v1"
@@ -77,7 +78,7 @@ func (w *EmbeddedVegaWallet) GetKeyPair(index uint64) *VegaKeyPair {
 	hexPubKey, hexPrivKey := fmt.Sprintf("%x", pubKey), fmt.Sprintf("%x", privKey)
 	w.keys[index] = &VegaKeyPair{pubKey: hexPubKey, privKey: hexPrivKey}
 
-	fmt.Printf("Derived key pair with pubkey value: %v\n", hexPubKey)
+	fmt.Printf("Derived key pair with pubkey value: %v at index: %v\n", hexPubKey, index)
 
 	// os.Exit(0)
 
@@ -105,7 +106,6 @@ type VegaSigner struct {
 	txDataCh chan *commandspb.InputData
 	txOutCh  chan *commandspb.Transaction
 	keypair  *VegaKeyPair
-	chainId  string
 	powStore *pow.PowStore
 
 	// pows    map[uint64][]*pow.ProofOfWork
@@ -142,19 +142,20 @@ func (s *VegaSigner) SignInputData(bundledInputData []byte) string {
 	return hex.EncodeToString(sig)
 }
 
-func (s *VegaSigner) StartFetchLoop() {
-	for inputData := range s.GetInChan() {
-		s.BuildAndSendTx(inputData)
-	}
+func (s *VegaSigner) Start() {
+	go func() {
+		for inputData := range s.txDataCh {
+			s.BuildAndSendTx(inputData)
+		}
+	}()
 }
 
 func (s *VegaSigner) BuildAndSendTx(inputData *commandspb.InputData) {
 	fmt.Printf("Building Tx...\n")
 	keyPair := s.keypair
-	chainId := s.getChainId()
 
 	// We could do some retries here instead...
-	pow, ok := s.powStore.GetPow()
+	pow, ok := s.powStore.GetPowWithRetry(time.Millisecond*200, 5)
 	if !ok {
 		log.Printf("Proof of work not available for pubkey: %v, dropping tx.", s.keypair.pubKey)
 		return
@@ -166,9 +167,9 @@ func (s *VegaSigner) BuildAndSendTx(inputData *commandspb.InputData) {
 	if err != nil {
 		log.Fatalf("Failed to marshal inputData into bytes: %v", err)
 	}
-	bundledInputData := bytes.Join([][]byte{[]byte(chainId), inputDataBytes}, []byte{0x0})
+	bundledInputData := bytes.Join([][]byte{[]byte(pow.ChainId), inputDataBytes}, []byte{0x0})
 	hexSig := s.SignInputData(bundledInputData)
-	log.Printf("Signed input data with keypair with pubkey: %v", keyPair.pubKey)
+	log.Printf("Signed input data with keypair with pubkey: %v, hexSig: %v", keyPair.pubKey, hexSig)
 	signature := &commandspb.Signature{
 		Value:   hexSig,
 		Algo:    "vega/ed25519",
@@ -186,49 +187,8 @@ func (s *VegaSigner) BuildAndSendTx(inputData *commandspb.InputData) {
 	}
 }
 
-// func (s *VegaSigner) BuildTx(inputData *commandspb.InputData) *commandspb.Transaction {
-// 	fmt.Printf("Building Tx...\n")
-// 	keyPair := s.keypair
-// 	chainId := s.getChainId()
-// 	pow, ok := s.powStore.GetPow()
-// 	if !ok {
-
-// 	}
-
-// 	inputData.BlockHeight = pow.BlockHeight
-// 	inputData.Nonce = rand.Uint64()
-// 	inputDataBytes, err := proto.Marshal(inputData)
-// 	if err != nil {
-// 		log.Fatalf("Failed to marshal inputData into bytes: %v", err)
-// 	}
-// 	bundledInputData := bytes.Join([][]byte{[]byte(chainId), inputDataBytes}, []byte{0x0})
-// 	hexSig := s.SignInputData(bundledInputData)
-// 	log.Printf("Signed input data with keypair with pubkey: %v", keyPair.pubKey)
-// 	signature := &commandspb.Signature{
-// 		Value:   hexSig,
-// 		Algo:    "vega/ed25519",
-// 		Version: 1,
-// 	}
-// 	proofOfWork := &commandspb.ProofOfWork{
-// 		Tid: pow.TxId, Nonce: pow.Nonce,
-// 	}
-// 	return &commandspb.Transaction{
-// 		Version:   commandspb.TxVersion_TX_VERSION_V3,
-// 		Signature: signature,
-// 		Pow:       proofOfWork,
-// 		InputData: inputDataBytes,
-// 		From:      &commandspb.Transaction_PubKey{PubKey: keyPair.pubKey},
-// 	}
-// }
-
 func (s *VegaSigner) SubmitTx(tx *commandspb.Transaction) {
 	s.txOutCh <- tx
-}
-
-func (s *VegaSigner) getChainId() string {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.chainId
 }
 
 func (s *VegaSigner) GetPowStore() *pow.PowStore {

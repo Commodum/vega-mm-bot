@@ -23,9 +23,9 @@ type VegaCoreClient struct {
 	grpcAddr  string
 	grpcAddrs []string
 
-	agentPubkeys  []string
-	txInCh        chan *commandspb.Transaction
-	powStatsOutCh chan *pow.PowStatistic
+	agentPubkeys     []string
+	txInCh           chan *commandspb.Transaction
+	recentBlockOutCh chan *pow.RecentBlock
 
 	reconnecting bool
 	reconnChan   chan struct{}
@@ -39,11 +39,11 @@ func NewVegaCoreClient(coreAddrs []string) *VegaCoreClient {
 	}
 }
 
-func (v *VegaCoreClient) Init(pubkeys []string, txInCh chan *commandspb.Transaction, powStatsCh chan *pow.PowStatistic) *VegaCoreClient {
+func (v *VegaCoreClient) Init(pubkeys []string, txInCh chan *commandspb.Transaction, recentBlockCh chan *pow.RecentBlock) *VegaCoreClient {
 
 	v.agentPubkeys = pubkeys
 	v.txInCh = txInCh
-	v.powStatsOutCh = powStatsCh
+	v.recentBlockOutCh = recentBlockCh
 
 	ok := v.TestVegaCoreAddrs()
 	if !ok {
@@ -54,7 +54,7 @@ func (v *VegaCoreClient) Init(pubkeys []string, txInCh chan *commandspb.Transact
 }
 
 func (v *VegaCoreClient) Start() {
-	v.StartGetSpamStatisticsLoop()
+	v.StartGetLastBlockLoop()
 	v.StartSubmitTxLoop()
 }
 
@@ -153,45 +153,42 @@ func (v *VegaCoreClient) StartSubmitTxLoop() {
 
 }
 
-func (v *VegaCoreClient) StartGetSpamStatisticsLoop() {
-
-	go func() {
-		for range time.NewTicker(time.Second * 2).C {
-			v.GetSpamStatistics()
-		}
-	}()
-
-}
-
-func (v *VegaCoreClient) GetSpamStatistics() {
+func (v *VegaCoreClient) StartGetLastBlockLoop() {
 
 	conn, err := grpc.Dial(v.grpcAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Printf("Failed to connect to Vega Core node: %v\n", err)
+		// We should switch to another vega node in this instance
 		v.HandleVegaCoreReconnect()
 		return
 	}
-	defer conn.Close()
 
-	coreService := coreapipb.NewCoreServiceClient(conn)
+	go func(conn *grpc.ClientConn) {
+		defer conn.Close()
+		coreService := coreapipb.NewCoreServiceClient(conn)
+		lbhReq := &coreapipb.LastBlockHeightRequest{}
+		for range time.NewTicker(time.Millisecond * 600).C {
 
-	for _, partyId := range v.agentPubkeys {
-		stReq := &coreapipb.GetSpamStatisticsRequest{PartyId: partyId}
-		res, err := coreService.GetSpamStatistics(context.Background(), stReq)
-		if err != nil {
-			log.Printf("Failed to get spam statistics from core node: %v\n", err)
-			v.HandleVegaCoreReconnect()
-			return
+			res, err := coreService.LastBlockHeight(context.Background(), lbhReq)
+			if err != nil {
+				log.Printf("Failed to get last block height from core node: %v\n", err)
+				// Switch to another vega node addr
+				v.HandleVegaCoreReconnect()
+				return
+			}
+
+			v.recentBlockOutCh <- &pow.RecentBlock{
+				Height:               res.GetHeight(),
+				Hash:                 res.GetHash(),
+				SpamPowHashFunction:  res.GetSpamPowHashFunction(),
+				SpamPowDifficulty:    res.GetSpamPowDifficulty(),
+				SpamPowNumPastBlocks: res.GetSpamPowNumberOfPastBlocks(),
+				SpamPowNumTxPerBlock: res.GetSpamPowNumberOfTxPerBlock(),
+				ChainId:              res.GetChainId(),
+			}
+
 		}
-
-		powStats := &pow.PowStatistic{
-			PartyId:      partyId,
-			PoWStatistic: res.GetStatistics().GetPow(),
-		}
-
-		v.powStatsOutCh <- powStats
-
-	}
+	}(conn)
 
 }
 
@@ -231,6 +228,7 @@ func (v *VegaCoreClient) RunVegaCoreReconnectHandler() {
 
 			// Restart the submit tx loop after successful reconnect.
 			v.StartSubmitTxLoop()
+			v.StartGetLastBlockLoop()
 		}
 	}
 

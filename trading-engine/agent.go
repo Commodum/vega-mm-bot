@@ -61,6 +61,7 @@ func (a *Agent) RegisterStrategy(strat strats.Strategy) {
 // Loads the vega decimals for each strategy. Must be called after connecting to
 // and receiving initial data from a data-node.
 func (a *Agent) LoadVegaDecimals() {
+	log.Printf("Loading Vega decimals.")
 	for _, strat := range maps.Values(a.strategies) {
 		market := strat.GetVegaStore().GetMarket()
 		asset := strat.GetVegaStore().GetAsset(market.GetTradableInstrument().GetInstrument().GetPerpetual().SettlementAsset)
@@ -70,24 +71,26 @@ func (a *Agent) LoadVegaDecimals() {
 
 }
 
-func (agent *Agent) UpdateLiquidityCommitment(strat strats.Strategy) {
-	if !strat.UsesLiquidityCommitment() {
-		log.Printf("Strategy does not utilize a liquidity commitment.")
-		return
-	}
+func (agent *Agent) UpdateLiquidityCommitments() {
+	for _, strat := range agent.strategies {
+		if !strat.UsesLiquidityCommitment() {
+			log.Printf("Strategy does not utilize a liquidity commitment.")
+			return
+		}
 
-	lpCommitment := strat.GetVegaStore().GetLiquidityProvision()
-	targetObligationVolume := strat.GetTargetObligationVolume()
+		lpCommitment := strat.GetVegaStore().GetLiquidityProvision()
+		targetObligationVolume := strat.GetTargetObligationVolume()
 
-	switch true {
-	case (lpCommitment != nil && targetObligationVolume.IsZero()):
-		strat.CancelLiquidityCommitment()
-	case (lpCommitment == nil && !targetObligationVolume.IsZero()):
-		strat.SubmitLiquidityCommitment()
-	case (lpCommitment != nil && !targetObligationVolume.IsZero()):
-		strat.AmendLiquidityCommitment()
-	default:
-		return
+		switch true {
+		case (lpCommitment != nil && targetObligationVolume.IsZero()):
+			strat.CancelLiquidityCommitment()
+		case (lpCommitment == nil && !targetObligationVolume.IsZero()):
+			strat.SubmitLiquidityCommitment()
+		case (lpCommitment != nil && !targetObligationVolume.IsZero()):
+			strat.AmendLiquidityCommitment()
+		default:
+			return
+		}
 	}
 }
 

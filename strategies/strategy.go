@@ -833,9 +833,10 @@ func (strat *MartingaleStrategy) RunStrategy(metricsCh chan *metrics.MetricsEven
 		// 	MarketDataUpdateCount: int(strat.vegaStore.GetMarketDataUpdateCounter()),
 		// }
 
-		metricsData := &metrics.StrategyMetrics{
+		metricsData := &metrics.StrategyMetricsData{
 			MarketId:              marketId,
 			BinanceTicker:         strat.BinanceMarket,
+			AgentPubkey: 		   strat.GetAgentPubKey(),
 			Position:              strat.vegaStore.GetPosition(),
 			SignedExposure:        signedExposure,
 			VegaBestBid:           vegaBestBid.Div(strat.d.priceFactor),

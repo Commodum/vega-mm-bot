@@ -53,7 +53,7 @@ func parseFlags() *Config {
 		walletServiceAddr = defaultWalletServiceAddr
 	}
 	if walletPubkey = getFlag(walletPubkey, os.Getenv("VEGAMM_WALLET_PUBKEY")); len(walletPubkey) <= 0 {
-		log.Fatal("Error: Missing -wallet-pubkey flag")
+		// log.Fatal("Error: Missing -wallet-pubkey flag")
 	}
 	if binanceMarkets = getFlag(binanceMarkets, os.Getenv("VEGAMM_BINANCE_MARKETS")); len(binanceMarkets) <= 0 {
 		log.Fatal("Error: Missing -binance-markets flag")
