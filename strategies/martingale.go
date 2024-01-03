@@ -4,7 +4,6 @@ import (
 	"log"
 	"math"
 	"strconv"
-	"sync"
 	"time"
 	"vega-mm/metrics"
 	"vega-mm/stores"
@@ -39,52 +38,12 @@ import (
 //			- targetVolume (bidvol, askVol)
 //
 
-type OldStrategyOpts struct {
-	marketId                string
-	binanceMarket           string
-	UsesLiquidityCommitment bool
-	targetObligationVolume  int64
-	maxProbabilityOfTrading float64
-	orderSpacing            float64
-	orderSizeBase           float64
-	targetVolCoefficient    float64
-	numOrdersPerSide        int
-}
-
-type GeneralOpts struct {
-	AgentKeyPairIdx        uint64
-	VegaMarketId           string
-	BinanceMarket          string
-	NumOrdersPerSide       int
-	LiquidityCommitment    bool
-	TargetObligationVolume decimal.Decimal
-	TargetVolCoefficient   decimal.Decimal
-}
-
-type OptsType interface {
-	~*MartingaleOpts | ~*OtherOpts
-}
-
-type OtherOpts struct {
-	testOpt string
-}
-
 type Martingale *MartingaleOpts
 
 type MartingaleOpts struct {
 	MaxProbabilityOfTrading decimal.Decimal
 	OrderSpacing            decimal.Decimal
 	OrderSizeBase           decimal.Decimal
-}
-
-type StrategyOpts[T OptsType] struct {
-	General  *GeneralOpts
-	Specific T
-}
-
-type syncPubKeyBalance struct {
-	mu    sync.RWMutex
-	value decimal.Decimal
 }
 
 type MartingaleStrategy struct {
@@ -99,63 +58,6 @@ type MartingaleStrategy struct {
 	binanceStore *stores.BinanceStore
 
 	txDataCh chan *commandspb.InputData
-}
-
-// Shelve for now but implement later with more strategy-level metrics
-type StrategyMetrics struct {
-	position              *vegapb.Position
-	signedExposure        decimal.Decimal
-	pubkeyBalance         decimal.Decimal
-	ourBestBid            decimal.Decimal
-	ourBestAsk            decimal.Decimal
-	vegaBestBid           decimal.Decimal
-	vegaBestAsk           decimal.Decimal
-	LiveOrdersCount       int
-	MarketDataUpdateCount int
-}
-
-type Strategy interface {
-	SetTxDataChan(chan *commandspb.InputData)
-
-	GetAgentKeyPairIndex() uint64
-
-	GetVegaMarketId() string
-	GetBinanceMarketTicker() string
-
-	GetVegaStore() *stores.VegaStore
-	GetBinanceStore() *stores.BinanceStore
-
-	SetVegaDecimals(positionDecimals, priceDecimals, assetDecimals int64)
-	GetVegaDecimals() *decimals
-
-	UsesLiquidityCommitment() bool
-	GetTargetObligationVolume() decimal.Decimal
-	SubmitLiquidityCommitment()
-	AmendLiquidityCommitment()
-	CancelLiquidityCommitment()
-
-	RunStrategy(chan *metrics.MetricsEvent)
-
-	SetAgentPubKey(string)
-	GetAgentPubKey() string
-	SetAgentPubKeyBalance(decimal.Decimal)
-	GetAgentPubKeyBalance() decimal.Decimal
-
-	GetOurBestBidAndAsk([]*vegapb.Order) (decimal.Decimal, decimal.Decimal)
-
-	GetOrderSubmission(decimal.Decimal, decimal.Decimal, decimal.Decimal, decimal.Decimal, decimal.Decimal, decimal.Decimal, vegapb.Side, *vegapb.LogNormalRiskModel, *vegapb.LiquiditySLAParameters) []*commandspb.OrderSubmission
-
-	// GetRiskMetricsForMarket(*vegapb.Market) (something... something... something...)
-
-	GetEntryPriceAndVolume() (decimal.Decimal, decimal.Decimal)
-
-	// GetProbabilityOfTradingForPrice() float64
-}
-
-type decimals struct {
-	positionFactor decimal.Decimal
-	priceFactor    decimal.Decimal
-	assetFactor    decimal.Decimal
 }
 
 // func NewStrategy(opts *StrategyOpts) *strategy {
@@ -836,7 +738,7 @@ func (strat *MartingaleStrategy) RunStrategy(metricsCh chan *metrics.MetricsEven
 		metricsData := &metrics.StrategyMetricsData{
 			MarketId:              marketId,
 			BinanceTicker:         strat.BinanceMarket,
-			AgentPubkey: 		   strat.GetAgentPubKey(),
+			AgentPubkey:           strat.GetAgentPubKey(),
 			Position:              strat.vegaStore.GetPosition(),
 			SignedExposure:        signedExposure,
 			VegaBestBid:           vegaBestBid.Div(strat.d.priceFactor),

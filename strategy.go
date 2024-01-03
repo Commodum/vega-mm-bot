@@ -6,6 +6,8 @@ import (
 	// "encoding/json"
 	"log"
 	"math"
+	"math/rand"
+
 	// "os"
 
 	// "reflect"
@@ -16,6 +18,7 @@ import (
 	// "code.vegaprotocol.io/quant/interfaces"
 	pd "code.vegaprotocol.io/quant/pricedistribution"
 	"code.vegaprotocol.io/quant/riskmodelbs"
+
 	// "code.vegaprotocol.io/vega/protos/vega"
 	vegapb "code.vegaprotocol.io/vega/protos/vega"
 	commandspb "code.vegaprotocol.io/vega/protos/vega/commands/v1"
@@ -217,6 +220,25 @@ func (a *agent) RunStrategy(strat *strategy, metricsCh chan *MetricsState) {
 	// complex strategies that have distinct logic from one another then we need to refactor this to call
 	// a "Run" method on a strategy interface. Then each strategy can have it's own set of business logic.
 
+	var reduceExposureThisCycle bool
+	exposureReductionChan := make(chan struct{})
+	go func() {
+		waitingToReduce := false
+		for range exposureReductionChan {
+			if waitingToReduce {
+				continue
+			}
+			waitingToReduce = true
+
+			go func() {
+				<-time.NewTimer(time.Second * time.Duration(10+rand.Intn(15))).C
+				log.Printf("Reducing exposure next cycle...")
+				reduceExposureThisCycle = true
+				waitingToReduce = false
+			}()
+		}
+	}()
+
 	for range time.NewTicker(750 * time.Millisecond).C {
 		log.Printf("Executing strategy for %v...", strat.binanceMarket)
 
@@ -245,8 +267,8 @@ func (a *agent) RunStrategy(strat *strategy, metricsCh chan *MetricsState) {
 			bidVol = strat.targetObligationVolume.Mul(strat.targetVolCoefficient)
 			askVol = strat.targetObligationVolume.Mul(strat.targetVolCoefficient)
 			// neutralityThresholds = []float64{0.005, 0.01, 0.02}
-			neutralityThresholds = []float64{0, 0.01, 0.035, 0.075}
-			neutralityOffsets    = []float64{0.0005, 0.00075, 0.00125, 0.002}
+			neutralityThresholds = []float64{0, 0.01, 0.035, 0.075, 0.1}
+			neutralityOffsets    = []float64{0.0002, 0.0005, 0.00075, 0.001, 0.0015}
 			bidReductionAmount   = decimal.Max(signedExposure, decimal.NewFromInt(0))
 			askReductionAmount   = decimal.Min(signedExposure, decimal.NewFromInt(0)).Abs()
 			bidOffset            = decimal.NewFromInt(0)
@@ -294,6 +316,11 @@ func (a *agent) RunStrategy(strat *strategy, metricsCh chan *MetricsState) {
 			}
 		}
 
+		// if marketId == "f148741398d6bafafdc384819808a14e07340182455105e280aa0294c92c2e60" {
+		// 	bidOffset = decimal.NewFromFloat(0.005)
+		// 	askOffset = decimal.NewFromFloat(0.005)
+		// }
+
 		log.Printf("bidOffset: %v, askOffset: %v", bidOffset, askOffset)
 
 		// One method to stay neutral could be to increase the offset and the order spacing when volatility
@@ -324,15 +351,15 @@ func (a *agent) RunStrategy(strat *strategy, metricsCh chan *MetricsState) {
 			var price decimal.Decimal
 			var binancePrice decimal.Decimal
 			var side vegapb.Side
-			if signedExposure.IsPositive() {
-				side = vegapb.Side_SIDE_SELL
-				price = vegaBestAsk
-				binancePrice = binanceBestAsk
-			} else {
-				side = vegapb.Side_SIDE_BUY
-				price = vegaBestBid
-				binancePrice = binanceBestBid
-			}
+			// if signedExposure.IsPositive() {
+			// 	side = vegapb.Side_SIDE_SELL
+			// 	price = vegaBestAsk
+			// 	binancePrice = binanceBestAsk
+			// } else {
+			// 	side = vegapb.Side_SIDE_BUY
+			// 	price = vegaBestBid
+			// 	binancePrice = binanceBestBid
+			// }
 
 			_ = price
 			_ = binancePrice
@@ -341,18 +368,59 @@ func (a *agent) RunStrategy(strat *strategy, metricsCh chan *MetricsState) {
 			// We need to refactor this to use a separate martingale distribution near the front of the book instead
 			// of one big order right at the front. Either that or disable this feature completely and use other neutrality
 			// strategies.
-			submissions = append(submissions, &commandspb.OrderSubmission{
-				MarketId: strat.marketId,
-				// Price:       price.BigInt().String(),
-				Price:       binancePrice.Mul(strat.d.priceFactor).BigInt().String(),
-				Size:        openVol.Mul(strat.d.positionFactor).Abs().BigInt().Uint64(),
-				Side:        side,
-				TimeInForce: vegapb.Order_TIME_IN_FORCE_GTT,
-				ExpiresAt:   int64(time.Now().UnixNano() + 10*1e9),
-				Type:        vegapb.Order_TYPE_LIMIT,
-				PostOnly:    true,
-				Reference:   "ref",
-			})
+
+			// Let's make this a market order a few basis points behind the best bid/ask
+			// submissions = append(submissions, &commandspb.OrderSubmission{
+			// 	MarketId: strat.marketId,
+			// 	// Price:       price.BigInt().String(),
+			// 	Price:       binancePrice.Mul(strat.d.priceFactor).BigInt().String(),
+			// 	Size:        openVol.Mul(strat.d.positionFactor).Abs().BigInt().Uint64(),
+			// 	Side:        side,
+			// 	TimeInForce: vegapb.Order_TIME_IN_FORCE_GTT,
+			// 	ExpiresAt:   int64(time.Now().UnixNano() + 6*1e9),
+			// 	Type:        vegapb.Order_TYPE_LIMIT,
+			// 	PostOnly:	 true,
+			// 	Reference:   "ref",
+			// })
+
+			exposureReductionChan <- struct{}{}
+
+			if reduceExposureThisCycle {
+				log.Printf("Reducing exposure...\n")
+				log.Printf("SignedExposure: %v\n", signedExposure)
+				log.Printf("reducing vegabestbid: %v, vegaBestAsk: %v\n", vegaBestBid, vegaBestAsk)
+
+				var positionFraction = decimal.NewFromFloat(0.12)
+				var priceMultiplier decimal.Decimal
+				if signedExposure.IsPositive() {
+					side = vegapb.Side_SIDE_SELL
+					price = vegaBestBid
+					priceMultiplier = decimal.NewFromFloat(0.999)
+				} else {
+					side = vegapb.Side_SIDE_BUY
+					price = vegaBestAsk
+					priceMultiplier = decimal.NewFromFloat(1.001)
+				}
+
+				if signedExposure.Abs().LessThan(decimal.NewFromInt(1000)) {
+					positionFraction = decimal.NewFromInt(1)
+				}
+
+				submissions = append(submissions, &commandspb.OrderSubmission{
+					MarketId:    strat.marketId,
+					Price:       price.Mul(priceMultiplier).BigInt().String(),
+					Size:        openVol.Mul(strat.d.positionFactor).Abs().Mul(positionFraction).BigInt().Uint64(),
+					Side:        side,
+					TimeInForce: vegapb.Order_TIME_IN_FORCE_IOC,
+					Type:        vegapb.Order_TYPE_LIMIT,
+					ReduceOnly:  true,
+					Reference:   "ref",
+				})
+
+				log.Printf("submissions: %+v\n", submissions)
+
+				reduceExposureThisCycle = false
+			}
 
 		}
 
@@ -643,6 +711,7 @@ func (strat *strategy) GetOrderSubmission(binanceRefPrice, vegaRefPrice, vegaMid
 
 	log.Printf("Binance and Vega ref prices for %v: Binance: %v --- Vega: %v", side.String(), binanceRefPrice, vegaRefPrice.Div(strat.d.priceFactor))
 
+	// If Binance best price is > 5 basis points behind the Vega best price then use Binance for reference price.
 	if side == vegapb.Side_SIDE_BUY && binanceRefPrice.LessThan(vegaRefPriceAdj.Mul(decimal.NewFromFloat(0.9995))) && !strat.binanceStore.isStale {
 		// log.Printf("Using Binance ref price for bid...\n")
 		// refPrice = binanceRefPrice.InexactFloat64()
@@ -666,16 +735,16 @@ func (strat *strategy) GetOrderSubmission(binanceRefPrice, vegaRefPrice, vegaMid
 	log.Printf("firstPrice: %v\n", firstPrice)
 
 	// If the firstPrice is more then x basis points from the mid, set it to x-1 basis points from the mid.
-	bp := 31.
-	if side == vegapb.Side_SIDE_BUY {
-		if decimal.NewFromFloat(firstPrice).LessThan(vegaMidPrice.Div(strat.d.priceFactor).Mul(decimal.NewFromFloat(1 - (bp / 10000)))) {
-			firstPrice = vegaMidPrice.Div(strat.d.priceFactor).Mul(decimal.NewFromFloat(1 - ((bp - 1) / 10000))).InexactFloat64()
-		}
-	} else {
-		if decimal.NewFromFloat(firstPrice).GreaterThan(vegaMidPrice.Div(strat.d.priceFactor).Mul(decimal.NewFromFloat(1 + (bp / 10000)))) {
-			firstPrice = vegaMidPrice.Div(strat.d.priceFactor).Mul(decimal.NewFromFloat(1 + ((bp - 1) / 10000))).InexactFloat64()
-		}
-	}
+	// bp := 160.
+	// if side == vegapb.Side_SIDE_BUY {
+	// 	if decimal.NewFromFloat(firstPrice).LessThan(vegaMidPrice.Div(strat.d.priceFactor).Mul(decimal.NewFromFloat(1 - (bp / 10000)))) {
+	// 		firstPrice = vegaMidPrice.Div(strat.d.priceFactor).Mul(decimal.NewFromFloat(1 - ((bp - 1) / 10000))).InexactFloat64()
+	// 	}
+	// } else {
+	// 	if decimal.NewFromFloat(firstPrice).GreaterThan(vegaMidPrice.Div(strat.d.priceFactor).Mul(decimal.NewFromFloat(1 + (bp / 10000)))) {
+	// 		firstPrice = vegaMidPrice.Div(strat.d.priceFactor).Mul(decimal.NewFromFloat(1 + ((bp - 1) / 10000))).InexactFloat64()
+	// 	}
+	// }
 
 	log.Printf("firstPrice: %v\n", firstPrice)
 	// If offset would push the first order onto the other side of the book then set it's value such
@@ -692,7 +761,7 @@ func (strat *strategy) GetOrderSubmission(binanceRefPrice, vegaRefPrice, vegaMid
 
 	reductionAmount := orderReductionAmount.Div(vegaRefPriceAdj)
 	// reductionAmount = decimal.NewFromInt(0)
-	reductionAmount = orderReductionAmount.Div(vegaRefPriceAdj).Mul(decimal.NewFromFloat(0.5))
+	reductionAmount = orderReductionAmount.Div(vegaRefPriceAdj).Mul(decimal.NewFromFloat(0.4))
 
 	totalOrderSizeUnits := (math.Pow(strat.orderSizeBase.InexactFloat64(), float64(strat.numOrdersPerSide+1)) - float64(1)) / (strat.orderSizeBase.InexactFloat64() - float64(1))
 	// totalOrderSizeUnits := (math.Pow(float64(2), float64(numOrders+1)) - float64(1)) / float64(2-1)
