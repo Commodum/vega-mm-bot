@@ -312,18 +312,12 @@ func (strat *AggressiveStrategy) RunStrategy(metricsCh chan *metrics.MetricsEven
 			cancellations = []*commandspb.OrderCancellation{}
 		)
 
-		// By default we want to use the Binance best bid/ask as our reference prices.
-
-		// If the Binance best bid is greater than the Vega best ask then we bid at the Vega best bid.
-
-		// If the Binance best ask is lower than the Vega best bid then we ask at the Vega best ask.
-
 		// Increase the offset from the best bid/ask when we have exposure.
 		for i, threshold := range neutralityThresholds {
 			// _ = i
 			// _ = neutralityOffsets
 
-			// This is currently using our balance, should it use obligation size instead? (Yes probably)
+			// This is currently using our balance, should it use obligation size instead?
 			value := strat.GetAgentPubKeyBalance().Mul(decimal.NewFromFloat(threshold))
 			switch true {
 			case signedExposure.GreaterThan(value):
@@ -375,7 +369,7 @@ func (strat *AggressiveStrategy) RunStrategy(metricsCh chan *metrics.MetricsEven
 			if reduceExposureThisCycle {
 				log.Printf("Reducing exposure...\n")
 				log.Printf("SignedExposure: %v\n", signedExposure)
-				log.Printf("Reducing vegabestbid: %v, vegaBestAsk: %v\n", vegaBestBid, vegaBestAsk)
+				log.Printf("reducing vegabestbid: %v, vegaBestAsk: %v\n", vegaBestBid, vegaBestAsk)
 
 				var positionFraction = decimal.NewFromFloat(0.15)
 				var priceMultiplier decimal.Decimal
