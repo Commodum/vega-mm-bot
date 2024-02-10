@@ -21,8 +21,13 @@ import (
 )
 
 type VegaKeyPair struct {
+	index 	uint64
 	pubKey  string
 	privKey string
+}
+
+func (v *VegaKeyPair) Index() uint64 {
+	return v.index
 }
 
 func (v *VegaKeyPair) PubKey() string {
@@ -76,7 +81,7 @@ func (w *EmbeddedVegaWallet) GetKeyPair(index uint64) *VegaKeyPair {
 
 	pubKey, privKey := node.Keypair()
 	hexPubKey, hexPrivKey := fmt.Sprintf("%x", pubKey), fmt.Sprintf("%x", privKey)
-	w.keys[index] = &VegaKeyPair{pubKey: hexPubKey, privKey: hexPrivKey}
+	w.keys[index] = &VegaKeyPair{index: index, pubKey: hexPubKey, privKey: hexPrivKey}
 
 	fmt.Printf("Derived key pair with pubkey value: %v at index: %v\n", hexPubKey, index)
 

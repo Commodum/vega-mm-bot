@@ -15,6 +15,7 @@ import (
 )
 
 type Agent struct {
+	index      uint64
 	pubkey     string
 	apiToken   string
 	balance    decimal.Decimal
@@ -25,10 +26,29 @@ type Agent struct {
 	// metricsCh  chan *MetricsState
 }
 
+type Position struct {
+	Venue      string
+	Ticker     string
+	OpenVolume decimal.Decimal
+	EntryPrice decimal.Decimal
+}
+
+type AgentBalance struct {
+	Venue   string
+	Asset   string
+	Balance decimal.Decimal
+}
+
+type AgentData struct {
+	Positions []*Position
+	Balances  []*AgentBalance
+}
+
 // func NewAgent(wallet *wallets.EmbeddedVegaWallet, keyPairIndex uint64, txBroadcastCh chan *commandspb.Transaction) *Agent {
 func NewAgent(keyPair *wallets.VegaKeyPair, txBroadcastCh chan *commandspb.Transaction) *Agent {
 	signer := wallets.NewVegaSigner(keyPair, txBroadcastCh)
 	agent := &Agent{
+		index:      keyPair.Index(),
 		pubkey:     keyPair.PubKey(),
 		strategies: map[string]strats.Strategy{},
 
@@ -39,6 +59,10 @@ func NewAgent(keyPair *wallets.VegaKeyPair, txBroadcastCh chan *commandspb.Trans
 		// metricsCh: make(chan *MetricsState),
 	}
 	return agent
+}
+
+func (a *Agent) GetIndex() uint64 {
+	return a.index
 }
 
 // Adds the strategy to the agents internal map
@@ -110,4 +134,47 @@ func (a *Agent) GetStrategies() []strats.Strategy {
 
 func (a *Agent) GetPowStore() *pow.PowStore {
 	return a.signer.GetPowStore()
+}
+
+func (a *Agent) GetPositions() (p []*Position) {
+
+	for _, strat := range a.strategies {
+		openVol, entryPrice := strat.GetEntryPriceAndVolume()
+		if openVol.IsZero() {
+			continue
+		}
+		p = append(p, &Position{
+			Venue:      "Vega",
+			Ticker:     strat.GetBinanceMarketTicker(),
+			OpenVolume: openVol,
+			EntryPrice: entryPrice,
+		})
+	}
+
+	return
+}
+
+func (a *Agent) GetBalances() (b []*AgentBalance) {
+
+	type void struct{}
+	assets := map[string]void{}
+
+	for _, strat := range a.strategies {
+		settlementAsset := strat.GetMarketSettlementAsset()
+		if _, ok := assets[settlementAsset]; ok {
+			continue
+		}
+
+		assets[settlementAsset] = void{}
+
+		balance := strat.GetAgentPubKeyBalance()
+
+		b = append(b, &AgentBalance{
+			Venue:   "Vega",
+			Asset:   "USDT", // We only have USDT markets for now
+			Balance: balance,
+		})
+	}
+
+	return
 }

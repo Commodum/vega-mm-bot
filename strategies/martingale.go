@@ -94,6 +94,10 @@ func (strat *MartingaleStrategy) GetBinanceStore() *stores.BinanceStore {
 	return strat.binanceStore
 }
 
+func (strat *MartingaleStrategy) GetMarketSettlementAsset() string {
+	return strat.GetVegaStore().GetMarket().GetTradableInstrument().GetInstrument().GetPerpetual().GetSettlementAsset()
+}
+
 func (strat *MartingaleStrategy) SetVegaDecimals(positionDecimals, priceDecimals, assetDecimals int64) {
 	strat.d = &decimals{
 		positionFactor: decimal.NewFromInt(10).Pow(decimal.NewFromInt(positionDecimals)),

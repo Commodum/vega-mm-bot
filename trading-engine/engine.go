@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"sync"
+	"time"
 	"vega-mm/metrics"
 	"vega-mm/pow"
 	strats "vega-mm/strategies"
@@ -31,14 +32,20 @@ type TradingEngine struct {
 
 	agents map[string]*Agent // map[pubkey]Agent
 
+	hedger *Hedger
+
 	metricsCh chan *metrics.MetricsEvent
 }
 
 func NewEngine() *TradingEngine {
-	return &TradingEngine{
+	te := &TradingEngine{
 		mu:     sync.RWMutex{},
 		agents: map[string]*Agent{},
 	}
+
+	te.hedger = NewHedger(te)
+
+	return te
 }
 
 func (t *TradingEngine) Init(metricsCh chan *metrics.MetricsEvent) *TradingEngine {
@@ -65,6 +72,12 @@ func (t *TradingEngine) Init(metricsCh chan *metrics.MetricsEvent) *TradingEngin
 }
 
 func (t *TradingEngine) Start() {
+
+	// Start Agent monitoring loop
+	t.StartAgentMonitoringLoop()
+
+	// Start the hedger.
+	t.hedger.Start(t.metricsCh)
 
 	// To start trading, for each agent we need to:
 	//	- Start the signer.
@@ -137,4 +150,24 @@ func (t *TradingEngine) GetNumStratsPerAgent() map[string]int {
 
 func (t *TradingEngine) GetNumAgents() int {
 	return len(t.agents)
+}
+
+// Starts monitoring agents by periodically recording data points like
+// balances, exposure, orderbook volume, trade volume, PnLs etc.
+func (t *TradingEngine) StartAgentMonitoringLoop() {
+	go func() {
+		for range time.NewTicker(time.Second).C {
+			t.mu.Lock()
+
+			// map[agentIndex]*AgentData{}
+			agentsData := map[uint64]*AgentData{} // map[agentIndex]*AgentData{}
+
+			for _, agent := range t.agents {
+				agentsData[agent.GetIndex()].Positions = agent.GetPositions()
+				agentsData[agent.GetIndex()].Balances = agent.GetBalances()
+			}
+
+			t.mu.Unlock()
+		}
+	}()
 }

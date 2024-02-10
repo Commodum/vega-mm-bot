@@ -14,6 +14,16 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+// type GeneralOpts struct {
+// 	AgentKeyPairIdx        uint64
+// 	VegaMarketId           string
+// 	BinanceMarket          string
+// 	NumOrdersPerSide       int
+// 	LiquidityCommitment    bool
+// 	TargetObligationVolume decimal.Decimal
+// 	TargetVolCoefficient   decimal.Decimal
+// }
+
 type Aggressive *AggressiveOpts
 
 type AggressiveOpts struct {
@@ -62,6 +72,10 @@ func (strat *AggressiveStrategy) GetVegaStore() *stores.VegaStore {
 
 func (strat *AggressiveStrategy) GetBinanceStore() *stores.BinanceStore {
 	return strat.binanceStore
+}
+
+func (strat *AggressiveStrategy) GetMarketSettlementAsset() string {
+	return strat.GetVegaStore().GetMarket().GetTradableInstrument().GetInstrument().GetPerpetual().GetSettlementAsset()
 }
 
 func (strat *AggressiveStrategy) SetVegaDecimals(positionDecimals, priceDecimals, assetDecimals int64) {
@@ -324,7 +338,10 @@ func (strat *AggressiveStrategy) RunStrategy(metricsCh chan *metrics.MetricsEven
 			// _ = neutralityOffsets
 
 			// This is currently using our balance, should it use obligation size instead? (Yes probably)
-			value := strat.GetAgentPubKeyBalance().Mul(decimal.NewFromFloat(threshold))
+			// value := strat.GetAgentPubKeyBalance().Mul(decimal.NewFromFloat(threshold))
+
+			value := strat.GetTargetObligationVolume().Mul(decimal.NewFromFloat(threshold))
+
 			switch true {
 			case signedExposure.GreaterThan(value):
 				// Too much long exposure, step back bid

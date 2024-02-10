@@ -45,6 +45,8 @@ type Strategy interface {
 	GetVegaStore() *stores.VegaStore
 	GetBinanceStore() *stores.BinanceStore
 
+	GetMarketSettlementAsset() string
+
 	SetVegaDecimals(positionDecimals, priceDecimals, assetDecimals int64)
 	GetVegaDecimals() *decimals
 
