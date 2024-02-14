@@ -55,7 +55,10 @@ func (b *BinanceClient) RunBinanceReconnectHandler() {
 		select {
 		case <-b.reconnChan:
 
-			b.StreamBinanceData()
+			wg := &sync.WaitGroup{}
+			wg.Add(1)
+			b.StreamBinanceData(wg)
+			wg.Wait()
 			b.reconnecting = false
 
 			// After we finish reconnecting mark the binance datastores as not stale.
@@ -68,12 +71,30 @@ func (b *BinanceClient) RunBinanceReconnectHandler() {
 	}
 }
 
-func (b *BinanceClient) Start() {
+func (b *BinanceClient) Start(wg *sync.WaitGroup) {
 	go b.RunBinanceReconnectHandler()
-	go b.StreamBinanceData()
+	go b.StreamBinanceData(wg)
 }
 
-func (b *BinanceClient) StreamBinanceData() {
+func (b *BinanceClient) StreamBinanceData(wg *sync.WaitGroup) {
+
+	log.Println("Opening streams for Binance data...")
+
+	// Wait until we receive data on all stores before we continue.
+	go func(wg *sync.WaitGroup) {
+	X:
+		for {
+			for _, storeSlice := range b.storesMap {
+				for _, store := range storeSlice {
+					if store.GetBestBid().IsZero() || store.GetBestAsk().IsZero() {
+						continue X
+					}
+				}
+			}
+			wg.Done()
+			return
+		}
+	}(wg)
 
 	delayReconnect := func() {
 		for _, stores := range b.storesMap {

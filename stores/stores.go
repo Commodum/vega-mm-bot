@@ -39,6 +39,8 @@ type BinanceStore struct {
 
 func NewVegaStore(marketId string) *VegaStore {
 	return &VegaStore{
+		mu: sync.RWMutex{},
+
 		marketId:                marketId,
 		assets:                  map[string]*vegapb.Asset{},
 		accounts:                map[string]*apipb.AccountBalance{},

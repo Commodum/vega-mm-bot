@@ -27,6 +27,7 @@ import (
 type Aggressive *AggressiveOpts
 
 type AggressiveOpts struct {
+	InitialOffset decimal.Decimal
 }
 
 type AggressiveStrategy struct {
@@ -47,6 +48,8 @@ func NewAggressiveStrategy(opts *StrategyOpts[Aggressive]) *AggressiveStrategy {
 	return &AggressiveStrategy{
 		GeneralOpts:    opts.General,
 		AggressiveOpts: opts.Specific,
+		vegaStore:      stores.NewVegaStore(opts.General.VegaMarketId),
+		binanceStore:   stores.NewBinanceStore(opts.General.BinanceMarket),
 	}
 }
 
@@ -293,44 +296,38 @@ func (strat *AggressiveStrategy) RunStrategy(metricsCh chan *metrics.MetricsEven
 		log.Printf("Executing strategy for %v...", strat.BinanceMarket)
 
 		var (
-			marketId        = strat.VegaMarketId
-			market          = strat.vegaStore.GetMarket()
-			settlementAsset = market.GetTradableInstrument().GetInstrument().GetPerpetual().GetSettlementAsset()
+			marketId = strat.VegaMarketId
+			market   = strat.vegaStore.GetMarket()
+			// settlementAsset = market.GetTradableInstrument().GetInstrument().GetPerpetual().GetSettlementAsset()
 
-			liquidityParams        = market.GetLiquiditySlaParams()
-			logNormalRiskModel     = market.GetTradableInstrument().GetLogNormalRiskModel()
-			liveOrders             = strat.vegaStore.GetOrders()
-			marketData             = strat.vegaStore.GetMarketData()
-			vegaBestBid            = decimal.RequireFromString(marketData.GetBestBidPrice())
-			vegaBestAsk            = decimal.RequireFromString(marketData.GetBestOfferPrice())
-			vegaBestBidAdj         = vegaBestBid.Div(strat.d.priceFactor)
-			vegaBestAskAdj         = vegaBestAsk.Div(strat.d.priceFactor)
-			vegaMidPrice           = decimal.RequireFromString(marketData.GetMidPrice())
+			// liquidityParams        = market.GetLiquiditySlaParams()
+			// logNormalRiskModel     = market.GetTradableInstrument().GetLogNormalRiskModel()
+			liveOrders     = strat.vegaStore.GetOrders()
+			marketData     = strat.vegaStore.GetMarketData()
+			vegaBestBid    = decimal.RequireFromString(marketData.GetBestBidPrice())
+			vegaBestAsk    = decimal.RequireFromString(marketData.GetBestOfferPrice())
+			vegaBestBidAdj = vegaBestBid.Div(strat.d.priceFactor)
+			vegaBestAskAdj = vegaBestAsk.Div(strat.d.priceFactor)
+			// vegaMidPrice           = decimal.RequireFromString(marketData.GetMidPrice())
 			ourBestBid, ourBestAsk = strat.GetOurBestBidAndAsk(liveOrders)
 			binanceBestBid         = strat.binanceStore.GetBestBid()
 			binanceBestAsk         = strat.binanceStore.GetBestAsk()
 			openVol, avgEntryPrice = strat.GetEntryPriceAndVolume()
 			// notionalExposure       = avgEntryPrice.Mul(openVol).Abs()
-			signedExposure       = avgEntryPrice.Mul(openVol)
-			balance              = strat.GetPubkeyBalance(settlementAsset)
-			bidVol               = strat.TargetObligationVolume.Mul(strat.TargetVolCoefficient)
-			askVol               = strat.TargetObligationVolume.Mul(strat.TargetVolCoefficient)
-			neutralityThresholds = []float64{0, 0.25, 1, 2.5, 5}
-			neutralityOffsets    = []float64{0.0001, 0.0002, 0.0005, 0.001, 0.0025}
-			bidReductionAmount   = decimal.Max(signedExposure, decimal.NewFromInt(0))
-			askReductionAmount   = decimal.Min(signedExposure, decimal.NewFromInt(0)).Abs()
-			bidOffset            = decimal.NewFromInt(0)
-			askOffset            = decimal.NewFromInt(0)
+			signedExposure = avgEntryPrice.Mul(openVol)
+			// balance              = strat.GetPubkeyBalance(settlementAsset)
+			// bidVol               = strat.TargetObligationVolume.Mul(strat.TargetVolCoefficient)
+			// askVol               = strat.TargetObligationVolume.Mul(strat.TargetVolCoefficient)
+			neutralityThresholds = []float64{0.1, 0.2, 0.3, 0.4, 0.5, 0.6}
+			neutralityOffsets    = []float64{0.001, 0.0015, 0.0025, 0.0035, 0.005, 0.0075}
+			// bidReductionAmount   = decimal.Max(signedExposure, decimal.NewFromInt(0))
+			// askReductionAmount   = decimal.Min(signedExposure, decimal.NewFromInt(0)).Abs()
+			bidOffset = strat.InitialOffset // decimal.NewFromFloat(0.0005)
+			askOffset = strat.InitialOffset // decimal.NewFromFloat(0.0005)
 
 			submissions   = []*commandspb.OrderSubmission{}
 			cancellations = []*commandspb.OrderCancellation{}
 		)
-
-		// By default we want to use the Binance best bid/ask as our reference prices.
-
-		// If the Binance best bid is greater than the Vega best ask then we bid at the Vega best bid.
-
-		// If the Binance best ask is lower than the Vega best bid then we ask at the Vega best ask.
 
 		// Increase the offset from the best bid/ask when we have exposure.
 		for i, threshold := range neutralityThresholds {
@@ -359,25 +356,45 @@ func (strat *AggressiveStrategy) RunStrategy(metricsCh chan *metrics.MetricsEven
 		}
 
 		log.Printf("bidOffset: %v, askOffset: %v", bidOffset, askOffset)
+		log.Printf("BinanceBestBid: %v, BinanceBestAsk: %v", binanceBestBid, binanceBestAsk)
 
-		// If Binance best price is > 5 basis points behind the Vega best price then peg orders relative to the binance
-		// price instead of vega price by adding to the offset.
-		if binanceBestBid.LessThan(vegaBestAskAdj.Mul(decimal.NewFromFloat(0.9995))) && !strat.binanceStore.IsStale() {
-			// log.Printf("Using Binance ref price for bid...\n")
-			// refPrice = binanceRefPrice.InexactFloat64()
-
-			// Instead of changing the ref price we can just add to the offset.
-			bidOffset = bidOffset.Add(decimal.NewFromInt(1).Sub(binanceBestBid.Div(vegaBestBidAdj)))
-
-		} else if binanceBestAsk.GreaterThan(vegaBestAskAdj.Mul(decimal.NewFromFloat(1.0005))) && !strat.binanceStore.IsStale() {
-			// log.Printf("Using Binance ref price for ask...\n")
-			// refPrice = binanceRefPrice.InexactFloat64()
-
-			askOffset = askOffset.Add(binanceBestAsk.Div(vegaBestAskAdj).Sub(decimal.NewFromInt(1)))
-
-		}
+		// // If Binance best price is > 5 basis points behind the Vega best price then peg orders relative to the binance
+		// // price instead of vega price by adding to the offset.
+		// if binanceBestBid.LessThan(vegaBestAskAdj.Mul(decimal.NewFromFloat(0.9995))) && !strat.binanceStore.IsStale() {
+		// 	// Instead of changing the ref price we can just add to the offset.
+		// 	bidOffset = bidOffset.Add(decimal.NewFromInt(1).Sub(binanceBestBid.Div(vegaBestBidAdj)))
+		// } else if binanceBestAsk.GreaterThan(vegaBeFunding in less than `timeWindow` minutesstAskAdj.Mul(decimal.NewFromFloat(1.0005))) && !strat.binanceStore.IsStale() {
+		// 	askOffset = askOffset.Add(binanceBestAsk.Div(vegaBestAskAdj).Sub(decimal.NewFromInt(1)))
+		// }
 
 		// We also need to take funding into account and add to the offsets so we don't get arb'd.
+		// Easiest way for now is just to determine when the funding is going to occur and increase
+		// the bid and ask offsets x minutes before funding occurs.
+
+		perp := market.GetTradableInstrument().GetInstrument().GetPerpetual()
+		timeTriggers := perp.GetDataSourceSpecForSettlementSchedule().GetData().GetInternal().GetTimeTrigger().GetTriggers()
+		initialFundingTime := *timeTriggers[0].Initial // Unix seconds
+		timeWindow := int64(300 + rand.Intn(300))
+
+		// If within `timeWindow` minutes of funding, increase both offsets.
+		if time.Now().Unix()%initialFundingTime >= (initialFundingTime - timeWindow) {
+			bidOffset = decimal.NewFromFloat(0.01)
+			askOffset = decimal.NewFromFloat(0.01)
+		}
+
+		// By default we want to use the Binance best bid/ask as our reference prices.
+		bidRefPrice := binanceBestBid
+		askRefPrice := binanceBestAsk
+
+		// If the Binance best bid is greater than the Vega best ask then we bid at the Vega best bid.
+		if binanceBestBid.GreaterThan(vegaBestAskAdj) {
+			bidRefPrice = vegaBestBidAdj
+		}
+
+		// If the Binance best ask is lower than the Vega best bid then we ask at the Vega best ask.
+		if binanceBestAsk.LessThan(vegaBestBidAdj) {
+			askRefPrice = vegaBestAskAdj
+		}
 
 		// Gradually reduce exposure over time.
 		if !openVol.IsZero() {
@@ -399,11 +416,15 @@ func (strat *AggressiveStrategy) RunStrategy(metricsCh chan *metrics.MetricsEven
 				if signedExposure.IsPositive() {
 					side = vegapb.Side_SIDE_SELL
 					price = vegaBestBid
-					priceMultiplier = decimal.NewFromFloat(0.999)
+					priceMultiplier = decimal.NewFromFloat(0.9985)
+					bidOffset = bidOffset.Add(decimal.NewFromFloat(0.0015))
+					bidRefPrice = vegaBestBidAdj
 				} else {
 					side = vegapb.Side_SIDE_BUY
 					price = vegaBestAsk
-					priceMultiplier = decimal.NewFromFloat(1.001)
+					priceMultiplier = decimal.NewFromFloat(1.0015)
+					askOffset = askOffset.Add(decimal.NewFromFloat(0.0015))
+					askRefPrice = vegaBestAskAdj
 				}
 
 				if signedExposure.Abs().LessThan(decimal.NewFromInt(1000)) {
@@ -427,6 +448,77 @@ func (strat *AggressiveStrategy) RunStrategy(metricsCh chan *metrics.MetricsEven
 			}
 
 		}
+
+		bidPrice := bidRefPrice.Mul(decimal.NewFromInt(1).Sub(bidOffset))
+		askPrice := askRefPrice.Mul(decimal.NewFromInt(1).Add(askOffset))
+
+		bidSize := strat.TargetObligationVolume.Mul(strat.TargetVolCoefficient).Div(bidRefPrice)
+		askSize := strat.TargetObligationVolume.Mul(strat.TargetVolCoefficient).Div(askRefPrice)
+
+		cancellations = append(cancellations, &commandspb.OrderCancellation{MarketId: strat.VegaMarketId})
+
+		submissions = append(
+			submissions,
+			&commandspb.OrderSubmission{ // Bid
+				MarketId:    strat.VegaMarketId,
+				Price:       bidPrice.Mul(strat.d.priceFactor).BigInt().String(),
+				Size:        bidSize.Mul(strat.d.positionFactor).BigInt().Uint64(),
+				Side:        vegapb.Side_SIDE_BUY,
+				TimeInForce: vegapb.Order_TIME_IN_FORCE_GTT,
+				ExpiresAt:   int64(time.Now().UnixNano() + 10*1e9),
+				Type:        vegapb.Order_TYPE_LIMIT,
+				PostOnly:    true,
+				Reference:   "ref",
+			},
+			&commandspb.OrderSubmission{ // Ask
+				MarketId:    strat.VegaMarketId,
+				Price:       askPrice.Mul(strat.d.priceFactor).BigInt().String(),
+				Size:        askSize.Mul(strat.d.positionFactor).BigInt().Uint64(),
+				Side:        vegapb.Side_SIDE_SELL,
+				TimeInForce: vegapb.Order_TIME_IN_FORCE_GTT,
+				ExpiresAt:   int64(time.Now().UnixNano() + 10*1e9),
+				Type:        vegapb.Order_TYPE_LIMIT,
+				PostOnly:    true,
+				Reference:   "ref",
+			},
+		)
+
+		metricsData := &metrics.StrategyMetricsData{
+			MarketId:              marketId,
+			BinanceTicker:         strat.BinanceMarket,
+			AgentPubkey:           strat.GetAgentPubKey(),
+			Position:              strat.vegaStore.GetPosition(),
+			SignedExposure:        signedExposure,
+			VegaBestBid:           vegaBestBid.Div(strat.d.priceFactor),
+			OurBestBid:            ourBestBid,
+			VegaBestAsk:           vegaBestAsk.Div(strat.d.priceFactor),
+			OurBestAsk:            ourBestAsk,
+			LiveOrdersCount:       len(strat.vegaStore.GetOrders()),
+			MarketDataUpdateCount: int(strat.vegaStore.GetMarketDataUpdateCounter()),
+		}
+
+		metricsCh <- &metrics.MetricsEvent{
+			Type: metrics.MetricsEventType_Strategy,
+			Data: metricsData,
+		}
+
+		batch := commandspb.BatchMarketInstructions{
+			Cancellations: cancellations,
+			Submissions:   submissions,
+		}
+
+		// Build and send tx
+		inputData := &commandspb.InputData{
+			Command: &commandspb.InputData_BatchMarketInstructions{
+				BatchMarketInstructions: &batch,
+			},
+		}
+
+		// log.Printf("Input Data: %v", inputData)
+		// log.Printf("Batch market instructions: %v", inputData.Command.(*commandspb.InputData_BatchMarketInstructions).BatchMarketInstructions)
+		// log.Printf("Submissions: %v", inputData.Command.(*commandspb.InputData_BatchMarketInstructions).BatchMarketInstructions.Submissions)
+
+		strat.txDataCh <- inputData
 
 	}
 

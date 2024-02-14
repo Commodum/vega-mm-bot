@@ -323,6 +323,12 @@ func (v *VegaDataClient) loadPositions() {
 	}
 
 	for _, edge := range res.Positions.Edges {
+		if _, ok := v.stores[edge.Node.GetMarketId()]; !ok {
+			continue
+		}
+		if _, ok := v.stores[edge.Node.GetMarketId()][edge.Node.GetPartyId()]; !ok {
+			continue
+		}
 		v.stores[edge.Node.GetMarketId()][edge.Node.GetPartyId()].SetPosition(edge.Node)
 	}
 
@@ -542,10 +548,22 @@ func (v *VegaDataClient) streamPositions() {
 				switch r := res.Response.(type) {
 				case *apipb.ObservePositionsResponse_Snapshot:
 					for _, pos := range r.Snapshot.Positions {
+						if _, ok := v.stores[pos.GetMarketId()]; !ok {
+							continue
+						}
+						if _, ok := v.stores[pos.GetMarketId()][pubkey]; !ok {
+							continue
+						}
 						v.stores[pos.GetMarketId()][pubkey].SetPosition(pos)
 					}
 				case *apipb.ObservePositionsResponse_Updates:
 					for _, pos := range r.Updates.Positions {
+						if _, ok := v.stores[pos.GetMarketId()]; !ok {
+							continue
+						}
+						if _, ok := v.stores[pos.GetMarketId()][pubkey]; !ok {
+							continue
+						}
 						v.stores[pos.GetMarketId()][pubkey].SetPosition(pos)
 					}
 				}

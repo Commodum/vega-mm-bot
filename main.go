@@ -28,7 +28,7 @@ const (
 
 	// -------------------- Mainnet APIs -------------------- \\
 	defaultVegaCoreAddrs     = "104.248.164.229:3002,167.71.44.7:3002,164.90.205.53:3002,185.246.86.71:3002,141.95.32.237:3002,176.9.125.110:3002,104.248.40.150:3002,164.92.138.136:3002,65.21.60.252:3002,65.108.226.25:3002,135.181.106.186:3002,167.71.55.128:3002"
-	defaultVegaGrpcAddresses = "vega-data.nodes.guru:3007,darling.network:3007,vega-grpc.mainnet.lovali.xyz:3007,grpcvega.gpvalidator.com:3007,vega-mainnet.anyvalid.com:3007"
+	defaultVegaGrpcAddresses = "vega-data.nodes.guru:3007,darling.network:3007,grpcvega.gpvalidator.com:3007,vega-mainnet.anyvalid.com:3007" // vega-grpc.mainnet.lovali.xyz:3007,
 	// ------------------------------------------------------ \\
 
 	// -------------------- Fairground APIs -------------------- \\
@@ -128,83 +128,167 @@ func GetMainnetStrategies() []strats.Strategy {
 	// 	numOrdersPerSide:        4,
 	// }
 
-	btcMartingaleStrategyOpts := &strats.StrategyOpts[strats.Martingale]{
+	// btcMartingaleStrategyOpts := &strats.StrategyOpts[strats.Martingale]{
+	// 	General: &strats.GeneralOpts{
+	// 		AgentKeyPairIdx:        2,
+	// 		VegaMarketId:           "4e9081e20e9e81f3e747d42cb0c9b8826454df01899e6027a22e771e19cc79fc",
+	// 		BinanceMarket:          "BTCUSDT",
+	// 		NumOrdersPerSide:       6,
+	// 		LiquidityCommitment:    false,
+	// 		TargetObligationVolume: decimal.NewFromInt(5000),
+	// 		TargetVolCoefficient:   decimal.NewFromFloat(1.2),
+	// 	},
+	// 	Specific: &strats.MartingaleOpts{
+	// 		MaxProbabilityOfTrading: decimal.NewFromFloat(0.2),
+	// 		OrderSpacing:            decimal.NewFromFloat(0.0005),
+	// 		OrderSizeBase:           decimal.NewFromFloat(2),
+	// 	},
+	// }
+
+	// ethMartingaleStrategyOpts := &strats.StrategyOpts[strats.Martingale]{
+	// 	General: &strats.GeneralOpts{
+	// 		AgentKeyPairIdx:        2,
+	// 		VegaMarketId:           "e63a37edae8b74599d976f5dedbf3316af82579447f7a08ae0495a021fd44d13",
+	// 		BinanceMarket:          "ETHUSDT",
+	// 		NumOrdersPerSide:       6,
+	// 		LiquidityCommitment:    false,
+	// 		TargetObligationVolume: decimal.NewFromInt(5000),
+	// 		TargetVolCoefficient:   decimal.NewFromFloat(1.2),
+	// 	},
+	// 	Specific: &strats.MartingaleOpts{
+	// 		MaxProbabilityOfTrading: decimal.NewFromFloat(0.2),
+	// 		OrderSpacing:            decimal.NewFromFloat(0.0005),
+	// 		OrderSizeBase:           decimal.NewFromFloat(2),
+	// 	},
+	// }
+
+	// solMartingaleStrategyOpts := &strats.StrategyOpts[strats.Martingale]{
+	// 	General: &strats.GeneralOpts{
+	// 		AgentKeyPairIdx:        3,
+	// 		VegaMarketId:           "f148741398d6bafafdc384819808a14e07340182455105e280aa0294c92c2e60",
+	// 		BinanceMarket:          "SOLUSDT",
+	// 		NumOrdersPerSide:       6,
+	// 		LiquidityCommitment:    false,
+	// 		TargetObligationVolume: decimal.NewFromInt(5000),
+	// 		TargetVolCoefficient:   decimal.NewFromFloat(1.2),
+	// 	},
+	// 	Specific: &strats.MartingaleOpts{
+	// 		MaxProbabilityOfTrading: decimal.NewFromFloat(0.2),
+	// 		OrderSpacing:            decimal.NewFromFloat(0.0005),
+	// 		OrderSizeBase:           decimal.NewFromFloat(2),
+	// 	},
+	// }
+
+	// linkMartingaleStrategyOpts := &strats.StrategyOpts[strats.Martingale]{
+	// 	General: &strats.GeneralOpts{
+	// 		AgentKeyPairIdx:        4,
+	// 		VegaMarketId:           "74f8bb5c2236dac8f29ee10c18d70d553b8faa180f288b559ef795d0faeb3607",
+	// 		BinanceMarket:          "LINKUSDT",
+	// 		NumOrdersPerSide:       6,
+	// 		LiquidityCommitment:    false,
+	// 		TargetObligationVolume: decimal.NewFromInt(5000),
+	// 		TargetVolCoefficient:   decimal.NewFromFloat(1.2),
+	// 	},
+	// 	Specific: &strats.MartingaleOpts{
+	// 		MaxProbabilityOfTrading: decimal.NewFromFloat(0.2),
+	// 		OrderSpacing:            decimal.NewFromFloat(0.0005),
+	// 		OrderSizeBase:           decimal.NewFromFloat(2),
+	// 	},
+	// }
+
+	btcAggressiveStrategyOpts := &strats.StrategyOpts[strats.Aggressive]{
 		General: &strats.GeneralOpts{
-			AgentKeyPairIdx:        2,
+			AgentKeyPairIdx:        1,
 			VegaMarketId:           "4e9081e20e9e81f3e747d42cb0c9b8826454df01899e6027a22e771e19cc79fc",
 			BinanceMarket:          "BTCUSDT",
-			NumOrdersPerSide:       6,
-			LiquidityCommitment:    false,
-			TargetObligationVolume: decimal.NewFromInt(5000),
-			TargetVolCoefficient:   decimal.NewFromFloat(1.2),
+			LiquidityCommitment:    true,
+			TargetObligationVolume: decimal.NewFromInt(200000),
+			TargetVolCoefficient:   decimal.NewFromFloat(1.1),
 		},
-		Specific: &strats.MartingaleOpts{
-			MaxProbabilityOfTrading: decimal.NewFromFloat(0.2),
-			OrderSpacing:            decimal.NewFromFloat(0.0005),
-			OrderSizeBase:           decimal.NewFromFloat(2),
+		Specific: &strats.AggressiveOpts{
+			InitialOffset: decimal.NewFromFloat(0.001),
 		},
 	}
 
-	ethMartingaleStrategyOpts := &strats.StrategyOpts[strats.Martingale]{
+	ethAggressiveStrategyOpts := &strats.StrategyOpts[strats.Aggressive]{
 		General: &strats.GeneralOpts{
-			AgentKeyPairIdx:        2,
+			AgentKeyPairIdx:        1,
 			VegaMarketId:           "e63a37edae8b74599d976f5dedbf3316af82579447f7a08ae0495a021fd44d13",
 			BinanceMarket:          "ETHUSDT",
-			NumOrdersPerSide:       6,
-			LiquidityCommitment:    false,
-			TargetObligationVolume: decimal.NewFromInt(5000),
-			TargetVolCoefficient:   decimal.NewFromFloat(1.2),
+			LiquidityCommitment:    true,
+			TargetObligationVolume: decimal.NewFromInt(200000),
+			TargetVolCoefficient:   decimal.NewFromFloat(1.1),
 		},
-		Specific: &strats.MartingaleOpts{
-			MaxProbabilityOfTrading: decimal.NewFromFloat(0.2),
-			OrderSpacing:            decimal.NewFromFloat(0.0005),
-			OrderSizeBase:           decimal.NewFromFloat(2),
+		Specific: &strats.AggressiveOpts{
+			InitialOffset: decimal.NewFromFloat(0.001),
 		},
 	}
 
-	solMartingaleStrategyOpts := &strats.StrategyOpts[strats.Martingale]{
+	injAggressiveStrategyOpts := &strats.StrategyOpts[strats.Aggressive]{
+		General: &strats.GeneralOpts{
+			AgentKeyPairIdx:        2,
+			VegaMarketId:           "b0ef037ff334cb83f80897b92ce197b440e27af47e671cd59933595e942abfc9",
+			BinanceMarket:          "INJUSDT",
+			LiquidityCommitment:    true,
+			TargetObligationVolume: decimal.NewFromInt(15000),
+			TargetVolCoefficient:   decimal.NewFromFloat(1.1),
+		},
+		Specific: &strats.AggressiveOpts{
+			InitialOffset: decimal.NewFromFloat(0.00075),
+		},
+	}
+
+	snxAggressiveStrategyOpts := &strats.StrategyOpts[strats.Aggressive]{
 		General: &strats.GeneralOpts{
 			AgentKeyPairIdx:        3,
-			VegaMarketId:           "f148741398d6bafafdc384819808a14e07340182455105e280aa0294c92c2e60",
-			BinanceMarket:          "SOLUSDT",
-			NumOrdersPerSide:       6,
-			LiquidityCommitment:    false,
-			TargetObligationVolume: decimal.NewFromInt(5000),
-			TargetVolCoefficient:   decimal.NewFromFloat(1.2),
+			VegaMarketId:           "5ec43c5d3570ff001b5072faeeff56b4320124175a76a1b624df80169b1ece5e",
+			BinanceMarket:          "SNXUSDT",
+			LiquidityCommitment:    true,
+			TargetObligationVolume: decimal.NewFromInt(15000),
+			TargetVolCoefficient:   decimal.NewFromFloat(1.1),
 		},
-		Specific: &strats.MartingaleOpts{
-			MaxProbabilityOfTrading: decimal.NewFromFloat(0.2),
-			OrderSpacing:            decimal.NewFromFloat(0.0005),
-			OrderSizeBase:           decimal.NewFromFloat(2),
+		Specific: &strats.AggressiveOpts{
+			InitialOffset: decimal.NewFromFloat(0.00075),
 		},
 	}
 
-	linkMartingaleStrategyOpts := &strats.StrategyOpts[strats.Martingale]{
+	ldoAggressiveStrategyOpts := &strats.StrategyOpts[strats.Aggressive]{
 		General: &strats.GeneralOpts{
 			AgentKeyPairIdx:        4,
-			VegaMarketId:           "74f8bb5c2236dac8f29ee10c18d70d553b8faa180f288b559ef795d0faeb3607",
-			BinanceMarket:          "LINKUSDT",
-			NumOrdersPerSide:       6,
-			LiquidityCommitment:    false,
-			TargetObligationVolume: decimal.NewFromInt(5000),
-			TargetVolCoefficient:   decimal.NewFromFloat(1.2),
+			VegaMarketId:           "603f891b390fa67ac1a7b8f520c743e776cf58da7b8637e2572d556ba55f2878",
+			BinanceMarket:          "LDOUSDT",
+			LiquidityCommitment:    true,
+			TargetObligationVolume: decimal.NewFromInt(15000),
+			TargetVolCoefficient:   decimal.NewFromFloat(1.1),
 		},
-		Specific: &strats.MartingaleOpts{
-			MaxProbabilityOfTrading: decimal.NewFromFloat(0.2),
-			OrderSpacing:            decimal.NewFromFloat(0.0005),
-			OrderSizeBase:           decimal.NewFromFloat(2),
+		Specific: &strats.AggressiveOpts{
+			InitialOffset: decimal.NewFromFloat(0.0015),
 		},
 	}
 
-	btcMartingaleStrategy := strats.NewMartingaleStrategy(btcMartingaleStrategyOpts)
-	ethMartingaleStrategy := strats.NewMartingaleStrategy(ethMartingaleStrategyOpts)
-	solMartingaleStrategy := strats.NewMartingaleStrategy(solMartingaleStrategyOpts)
-	linkMartingaleStrategy := strats.NewMartingaleStrategy(linkMartingaleStrategyOpts)
+	btcAggressiveStrategy := strats.NewAggressiveStrategy(btcAggressiveStrategyOpts)
+	ethAggressiveStrategy := strats.NewAggressiveStrategy(ethAggressiveStrategyOpts)
+	injAggressiveStrategy := strats.NewAggressiveStrategy(injAggressiveStrategyOpts)
+	snxAggressiveStrategy := strats.NewAggressiveStrategy(snxAggressiveStrategyOpts)
+	ldoAggressiveStrategy := strats.NewAggressiveStrategy(ldoAggressiveStrategyOpts)
 
-	s = append(s, btcMartingaleStrategy)
-	s = append(s, ethMartingaleStrategy)
-	s = append(s, solMartingaleStrategy)
-	s = append(s, linkMartingaleStrategy)
+	_ = btcAggressiveStrategy
+	_ = ethAggressiveStrategy
+	// s = append(s, btcAggressiveStrategy)
+	// s = append(s, ethAggressiveStrategy)
+	s = append(s, injAggressiveStrategy)
+	s = append(s, snxAggressiveStrategy)
+	s = append(s, ldoAggressiveStrategy)
+
+	// btcMartingaleStrategy := strats.NewMartingaleStrategy(btcMartingaleStrategyOpts)
+	// ethMartingaleStrategy := strats.NewMartingaleStrategy(ethMartingaleStrategyOpts)
+	// solMartingaleStrategy := strats.NewMartingaleStrategy(solMartingaleStrategyOpts)
+	// linkMartingaleStrategy := strats.NewMartingaleStrategy(linkMartingaleStrategyOpts)
+
+	// s = append(s, btcMartingaleStrategy)
+	// s = append(s, ethMartingaleStrategy)
+	// s = append(s, solMartingaleStrategy)
+	// s = append(s, linkMartingaleStrategy)
 
 	return s
 }
@@ -315,7 +399,7 @@ func main() {
 	worker.Start()
 
 	wg := &sync.WaitGroup{}
-	wg.Add(1)
+	wg.Add(2)
 	dataEngine.Start(wg)
 	wg.Wait()
 

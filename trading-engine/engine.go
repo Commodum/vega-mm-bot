@@ -74,10 +74,10 @@ func (t *TradingEngine) Init(metricsCh chan *metrics.MetricsEvent) *TradingEngin
 func (t *TradingEngine) Start() {
 
 	// Start Agent monitoring loop
-	t.StartAgentMonitoringLoop()
+	// t.StartAgentMonitoringLoop()
 
 	// Start the hedger.
-	t.hedger.Start(t.metricsCh)
+	// t.hedger.Start(t.metricsCh)
 
 	// To start trading, for each agent we need to:
 	//	- Start the signer.

@@ -75,8 +75,10 @@ func (d *DataEngine) Start(wg *sync.WaitGroup) {
 	//	- Opens API conns and streams.
 	//	- Begins collecting spam statistics for use by the proof of work worker.
 
+	// We need to wait until the streams are open before we continue.
+
 	d.vegaCoreClient.Start()
-	d.binanceClient.Start()
+	d.binanceClient.Start(wg)
 	d.vegaDataClient.Start(wg)
 
 }
