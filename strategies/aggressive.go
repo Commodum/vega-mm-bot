@@ -374,12 +374,12 @@ func (strat *AggressiveStrategy) RunStrategy(metricsCh chan *metrics.MetricsEven
 		perp := market.GetTradableInstrument().GetInstrument().GetPerpetual()
 		timeTriggers := perp.GetDataSourceSpecForSettlementSchedule().GetData().GetInternal().GetTimeTrigger().GetTriggers()
 		initialFundingTime := *timeTriggers[0].Initial // Unix seconds
-		timeWindow := int64(300 + rand.Intn(300))
+		timeWindow := int64(900 + rand.Intn(600))
 
 		// If within `timeWindow` minutes of funding, increase both offsets.
 		if time.Now().Unix()%initialFundingTime >= (initialFundingTime - timeWindow) {
-			bidOffset = decimal.NewFromFloat(0.01)
-			askOffset = decimal.NewFromFloat(0.01)
+			bidOffset = decimal.NewFromFloat(0.0125)
+			askOffset = decimal.NewFromFloat(0.0125)
 		}
 
 		// By default we want to use the Binance best bid/ask as our reference prices.

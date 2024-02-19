@@ -257,8 +257,8 @@ func GetMainnetStrategies() []strats.Strategy {
 			AgentKeyPairIdx:        4,
 			VegaMarketId:           "603f891b390fa67ac1a7b8f520c743e776cf58da7b8637e2572d556ba55f2878",
 			BinanceMarket:          "LDOUSDT",
-			LiquidityCommitment:    true,
-			TargetObligationVolume: decimal.NewFromInt(15000),
+			LiquidityCommitment:    false,
+			TargetObligationVolume: decimal.NewFromInt(0),
 			TargetVolCoefficient:   decimal.NewFromFloat(1.1),
 		},
 		Specific: &strats.AggressiveOpts{
@@ -278,7 +278,8 @@ func GetMainnetStrategies() []strats.Strategy {
 	// s = append(s, ethAggressiveStrategy)
 	s = append(s, injAggressiveStrategy)
 	s = append(s, snxAggressiveStrategy)
-	s = append(s, ldoAggressiveStrategy)
+	_ = ldoAggressiveStrategy
+	// s = append(s, ldoAggressiveStrategy)
 
 	// btcMartingaleStrategy := strats.NewMartingaleStrategy(btcMartingaleStrategyOpts)
 	// ethMartingaleStrategy := strats.NewMartingaleStrategy(ethMartingaleStrategyOpts)
