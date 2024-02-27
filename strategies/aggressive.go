@@ -27,7 +27,10 @@ import (
 type Aggressive *AggressiveOpts
 
 type AggressiveOpts struct {
-	InitialOffset decimal.Decimal
+	InitialOffset         decimal.Decimal
+	ReduceExposureAsTaker bool
+	ReductionThreshold    decimal.Decimal
+	ReductionFactor       decimal.Decimal
 }
 
 type AggressiveStrategy struct {
@@ -297,7 +300,7 @@ func (strat *AggressiveStrategy) RunStrategy(metricsCh chan *metrics.MetricsEven
 
 		var (
 			marketId = strat.VegaMarketId
-			market   = strat.vegaStore.GetMarket()
+			// market   = strat.vegaStore.GetMarket()
 			// settlementAsset = market.GetTradableInstrument().GetInstrument().GetPerpetual().GetSettlementAsset()
 
 			// liquidityParams        = market.GetLiquiditySlaParams()
@@ -319,7 +322,7 @@ func (strat *AggressiveStrategy) RunStrategy(metricsCh chan *metrics.MetricsEven
 			// bidVol               = strat.TargetObligationVolume.Mul(strat.TargetVolCoefficient)
 			// askVol               = strat.TargetObligationVolume.Mul(strat.TargetVolCoefficient)
 			neutralityThresholds = []float64{0.1, 0.2, 0.3, 0.4, 0.5, 0.6}
-			neutralityOffsets    = []float64{0.001, 0.0015, 0.0025, 0.0035, 0.005, 0.0075}
+			neutralityOffsets    = []float64{0.001, 0.0015, 0.0025, 0.0035, 0.006, 0.0085}
 			// bidReductionAmount   = decimal.Max(signedExposure, decimal.NewFromInt(0))
 			// askReductionAmount   = decimal.Min(signedExposure, decimal.NewFromInt(0)).Abs()
 			bidOffset = strat.InitialOffset // decimal.NewFromFloat(0.0005)
@@ -342,21 +345,25 @@ func (strat *AggressiveStrategy) RunStrategy(metricsCh chan *metrics.MetricsEven
 			switch true {
 			case signedExposure.GreaterThan(value):
 				// Too much long exposure, step back bid
-				bidOffset = decimal.NewFromFloat(neutralityOffsets[i])
+				if decimal.NewFromFloat(neutralityOffsets[i]).GreaterThan(strat.InitialOffset) {
+					bidOffset = decimal.NewFromFloat(neutralityOffsets[i])
+				}
 
 				// Push ask forward
 
 			case signedExposure.LessThan(value.Neg()):
 				// Too much short exposure, step back ask
-				askOffset = decimal.NewFromFloat(neutralityOffsets[i])
+				if decimal.NewFromFloat(neutralityOffsets[i]).GreaterThan(strat.InitialOffset) {
+					askOffset = decimal.NewFromFloat(neutralityOffsets[i])
+				}
 
 				// Push bid forward
 
 			}
 		}
 
-		log.Printf("bidOffset: %v, askOffset: %v", bidOffset, askOffset)
-		log.Printf("BinanceBestBid: %v, BinanceBestAsk: %v", binanceBestBid, binanceBestAsk)
+		log.Printf("%v: bidOffset: %v, askOffset: %v", strat.BinanceMarket, bidOffset, askOffset)
+		log.Printf("%v: BinanceBestBid: %v, BinanceBestAsk: %v", strat.BinanceMarket, binanceBestBid, binanceBestAsk)
 
 		// // If Binance best price is > 5 basis points behind the Vega best price then peg orders relative to the binance
 		// // price instead of vega price by adding to the offset.
@@ -371,33 +378,34 @@ func (strat *AggressiveStrategy) RunStrategy(metricsCh chan *metrics.MetricsEven
 		// Easiest way for now is just to determine when the funding is going to occur and increase
 		// the bid and ask offsets x minutes before funding occurs.
 
-		perp := market.GetTradableInstrument().GetInstrument().GetPerpetual()
-		timeTriggers := perp.GetDataSourceSpecForSettlementSchedule().GetData().GetInternal().GetTimeTrigger().GetTriggers()
-		initialFundingTime := *timeTriggers[0].Initial // Unix seconds
-		timeWindow := int64(900 + rand.Intn(600))
+		// perp := market.GetTradableInstrument().GetInstrument().GetPerpetual()
+		// timeTriggers := perp.GetDataSourceSpecForSettlementSchedule().GetData().GetInternal().GetTimeTrigger().GetTriggers()
+		// initialFundingTime := *timeTriggers[0].Initial // Unix seconds
+		// timeWindow := int64(900 + rand.Intn(600))
 
 		// If within `timeWindow` minutes of funding, increase both offsets.
-		if time.Now().Unix()%initialFundingTime >= (initialFundingTime - timeWindow) {
-			bidOffset = decimal.NewFromFloat(0.0125)
-			askOffset = decimal.NewFromFloat(0.0125)
-		}
+		// if time.Now().Unix()%initialFundingTime >= (initialFundingTime - timeWindow) {
+		// 	bidOffset = decimal.NewFromFloat(0.01)
+		// 	askOffset = decimal.NewFromFloat(0.01)
+		// }
 
 		// By default we want to use the Binance best bid/ask as our reference prices.
 		bidRefPrice := binanceBestBid
 		askRefPrice := binanceBestAsk
 
-		// If the Binance best bid is greater than the Vega best ask then we bid at the Vega best bid.
+		// If the Binance best bid is greater than the Vega best ask then we bid relative to the vega best ask.
 		if binanceBestBid.GreaterThan(vegaBestAskAdj) {
-			bidRefPrice = vegaBestBidAdj
+			bidRefPrice = vegaBestAskAdj
 		}
 
-		// If the Binance best ask is lower than the Vega best bid then we ask at the Vega best ask.
+		// If the Binance best ask is lower than the Vega best bid then we ask relative to the Vega best bid.
 		if binanceBestAsk.LessThan(vegaBestBidAdj) {
-			askRefPrice = vegaBestAskAdj
+			askRefPrice = vegaBestBidAdj
 		}
 
 		// Gradually reduce exposure over time.
-		if !openVol.IsZero() {
+		// if !openVol.IsZero() {
+		if strat.ReduceExposureAsTaker && signedExposure.Abs().GreaterThan(strat.ReductionThreshold) {
 
 			var side vegapb.Side
 			var price decimal.Decimal
@@ -411,7 +419,8 @@ func (strat *AggressiveStrategy) RunStrategy(metricsCh chan *metrics.MetricsEven
 				log.Printf("SignedExposure: %v\n", signedExposure)
 				log.Printf("Reducing vegabestbid: %v, vegaBestAsk: %v\n", vegaBestBid, vegaBestAsk)
 
-				var positionFraction = decimal.NewFromFloat(0.15)
+				// var positionFraction = decimal.NewFromFloat(0.15)
+				var positionFraction = strat.ReductionFactor
 				var priceMultiplier decimal.Decimal
 				if signedExposure.IsPositive() {
 					side = vegapb.Side_SIDE_SELL
@@ -451,6 +460,8 @@ func (strat *AggressiveStrategy) RunStrategy(metricsCh chan *metrics.MetricsEven
 
 		bidPrice := bidRefPrice.Mul(decimal.NewFromInt(1).Sub(bidOffset))
 		askPrice := askRefPrice.Mul(decimal.NewFromInt(1).Add(askOffset))
+
+		log.Printf("%v: bidPrice: %v, askPrice: %v", strat.BinanceMarket, bidPrice, askPrice)
 
 		bidSize := strat.TargetObligationVolume.Mul(strat.TargetVolCoefficient).Div(bidRefPrice)
 		askSize := strat.TargetObligationVolume.Mul(strat.TargetVolCoefficient).Div(askRefPrice)

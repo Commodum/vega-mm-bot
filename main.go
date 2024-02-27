@@ -206,7 +206,10 @@ func GetMainnetStrategies() []strats.Strategy {
 			TargetVolCoefficient:   decimal.NewFromFloat(1.1),
 		},
 		Specific: &strats.AggressiveOpts{
-			InitialOffset: decimal.NewFromFloat(0.001),
+			InitialOffset:         decimal.NewFromFloat(0.0075),
+			ReduceExposureAsTaker: true,
+			ReductionThreshold:    decimal.NewFromInt(0),
+			ReductionFactor:       decimal.NewFromFloat(0.15),
 		},
 	}
 
@@ -220,7 +223,10 @@ func GetMainnetStrategies() []strats.Strategy {
 			TargetVolCoefficient:   decimal.NewFromFloat(1.1),
 		},
 		Specific: &strats.AggressiveOpts{
-			InitialOffset: decimal.NewFromFloat(0.001),
+			InitialOffset:         decimal.NewFromFloat(0.0075),
+			ReduceExposureAsTaker: true,
+			ReductionThreshold:    decimal.NewFromInt(0),
+			ReductionFactor:       decimal.NewFromFloat(0.15),
 		},
 	}
 
@@ -234,7 +240,10 @@ func GetMainnetStrategies() []strats.Strategy {
 			TargetVolCoefficient:   decimal.NewFromFloat(1.1),
 		},
 		Specific: &strats.AggressiveOpts{
-			InitialOffset: decimal.NewFromFloat(0.00075),
+			InitialOffset:         decimal.NewFromFloat(0.01),
+			ReduceExposureAsTaker: true,
+			ReductionThreshold:    decimal.NewFromInt(0),
+			ReductionFactor:       decimal.NewFromFloat(0.15),
 		},
 	}
 
@@ -248,7 +257,10 @@ func GetMainnetStrategies() []strats.Strategy {
 			TargetVolCoefficient:   decimal.NewFromFloat(1.1),
 		},
 		Specific: &strats.AggressiveOpts{
-			InitialOffset: decimal.NewFromFloat(0.00075),
+			InitialOffset:         decimal.NewFromFloat(0.01),
+			ReduceExposureAsTaker: true,
+			ReductionThreshold:    decimal.NewFromInt(0),
+			ReductionFactor:       decimal.NewFromFloat(0.15),
 		},
 	}
 
@@ -257,12 +269,15 @@ func GetMainnetStrategies() []strats.Strategy {
 			AgentKeyPairIdx:        4,
 			VegaMarketId:           "603f891b390fa67ac1a7b8f520c743e776cf58da7b8637e2572d556ba55f2878",
 			BinanceMarket:          "LDOUSDT",
-			LiquidityCommitment:    false,
-			TargetObligationVolume: decimal.NewFromInt(0),
+			LiquidityCommitment:    true,
+			TargetObligationVolume: decimal.NewFromInt(10000),
 			TargetVolCoefficient:   decimal.NewFromFloat(1.1),
 		},
 		Specific: &strats.AggressiveOpts{
-			InitialOffset: decimal.NewFromFloat(0.0015),
+			InitialOffset:         decimal.NewFromFloat(0.0075),
+			ReduceExposureAsTaker: false,
+			ReductionThreshold:    decimal.NewFromInt(0),
+			ReductionFactor:       decimal.NewFromFloat(0.15),
 		},
 	}
 
@@ -272,14 +287,14 @@ func GetMainnetStrategies() []strats.Strategy {
 	snxAggressiveStrategy := strats.NewAggressiveStrategy(snxAggressiveStrategyOpts)
 	ldoAggressiveStrategy := strats.NewAggressiveStrategy(ldoAggressiveStrategyOpts)
 
-	_ = btcAggressiveStrategy
-	_ = ethAggressiveStrategy
-	// s = append(s, btcAggressiveStrategy)
-	// s = append(s, ethAggressiveStrategy)
+	// _ = btcAggressiveStrategy
+	// _ = ethAggressiveStrategy
+	// _ = ldoAggressiveStrategy
+	s = append(s, btcAggressiveStrategy)
+	s = append(s, ethAggressiveStrategy)
 	s = append(s, injAggressiveStrategy)
 	s = append(s, snxAggressiveStrategy)
-	_ = ldoAggressiveStrategy
-	// s = append(s, ldoAggressiveStrategy)
+	s = append(s, ldoAggressiveStrategy)
 
 	// btcMartingaleStrategy := strats.NewMartingaleStrategy(btcMartingaleStrategyOpts)
 	// ethMartingaleStrategy := strats.NewMartingaleStrategy(ethMartingaleStrategyOpts)

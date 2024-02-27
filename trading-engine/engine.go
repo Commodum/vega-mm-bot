@@ -73,6 +73,7 @@ func (t *TradingEngine) Init(metricsCh chan *metrics.MetricsEvent) *TradingEngin
 
 func (t *TradingEngine) Start() {
 
+	// TODO: Replace with `StartCollectingMetrics`
 	// Start Agent monitoring loop
 	// t.StartAgentMonitoringLoop()
 
