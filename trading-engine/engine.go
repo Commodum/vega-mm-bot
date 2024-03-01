@@ -12,6 +12,7 @@ import (
 	"vega-mm/wallets"
 
 	commandspb "code.vegaprotocol.io/vega/protos/vega/commands/v1"
+	"github.com/shopspring/decimal"
 	"golang.org/x/exp/maps"
 )
 
@@ -73,9 +74,7 @@ func (t *TradingEngine) Init(metricsCh chan *metrics.MetricsEvent) *TradingEngin
 
 func (t *TradingEngine) Start() {
 
-	// TODO: Replace with `StartCollectingMetrics`
-	// Start Agent monitoring loop
-	// t.StartAgentMonitoringLoop()
+	t.StartMetricsLoop()
 
 	// Start the hedger.
 	// t.hedger.Start(t.metricsCh)
@@ -153,22 +152,76 @@ func (t *TradingEngine) GetNumAgents() int {
 	return len(t.agents)
 }
 
-// Starts monitoring agents by periodically recording data points like
-// balances, exposure, orderbook volume, trade volume, PnLs etc.
-func (t *TradingEngine) StartAgentMonitoringLoop() {
-	go func() {
-		for range time.NewTicker(time.Second).C {
-			t.mu.Lock()
+func (t *TradingEngine) ComputeMetrics() []*metrics.MetricsEvent {
 
-			// map[agentIndex]*AgentData{}
-			agentsData := map[uint64]*AgentData{} // map[agentIndex]*AgentData{}
+	metricsEvents := []*metrics.MetricsEvent{}
 
-			for _, agent := range t.agents {
-				agentsData[agent.GetIndex()].Positions = agent.GetPositions()
-				agentsData[agent.GetIndex()].Balances = agent.GetBalances()
+	// Trading engine metrics will be total balances.
+	// Agent metrics will be individual USDT and VEGA balances.
+	globalBalances := map[string]decimal.Decimal{}
+
+	for pubkey, agent := range t.agents {
+		agent.mu.RLock()
+		balances := agent.data.Balances
+		agent.mu.RUnlock()
+
+		agentBalances := map[string]decimal.Decimal{} //map[assetName]balance
+
+		for _, bal := range balances {
+			if _, ok := globalBalances[bal.AssetName]; !ok {
+				globalBalances[bal.AssetName] = decimal.Zero
+			}
+			if _, ok := agentBalances[bal.AssetName]; !ok {
+				agentBalances[bal.AssetName] = decimal.Zero
 			}
 
-			t.mu.Unlock()
+			globalBalances[bal.AssetName] = globalBalances[bal.AssetName].Add(bal.Balance)
+			agentBalances[bal.AssetName] = agentBalances[bal.AssetName].Add(bal.Balance)
+		}
+
+		metricsEvents = append(metricsEvents, &metrics.MetricsEvent{
+			Type: metrics.MetricsEventType_Agent,
+			Data: &metrics.AgentMetricsData{
+				Pubkey:      pubkey,
+				PubkeyIndex: int(agent.GetIndex()),
+				VEGABalance: agentBalances["VEGA"],
+				USDTBalance: agentBalances["USDT"],
+			},
+		})
+
+	}
+
+	metricsEvents = append(metricsEvents, &metrics.MetricsEvent{
+		Type: metrics.MetricsEventType_TradingEngine,
+		Data: &metrics.TradingEngineMetricsData{
+			VEGABalance: globalBalances["VEGA"],
+			USDTBalance: globalBalances["USDT"],
+		},
+	})
+
+	return metricsEvents
+}
+
+// Starts monitoring agents by periodically recording data points like
+// balances, exposure, orderbook volume, trade volume, PnLs etc.
+// func (t *TradingEngine) StartAgentMonitoringLoop() {
+func (t *TradingEngine) StartMetricsLoop() {
+	go func() {
+		for range time.NewTicker(time.Second * 3).C {
+
+			// Update Agent data
+			for _, agent := range t.agents {
+				agent.mu.Lock()
+				agent.data.Positions = agent.GetPositions()
+				agent.data.Balances = agent.GetBalances()
+				agent.mu.Unlock()
+			}
+
+			metricsEvents := t.ComputeMetrics()
+
+			for _, evt := range metricsEvents {
+				t.metricsCh <- evt
+			}
 		}
 	}()
 }

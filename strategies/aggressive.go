@@ -31,6 +31,7 @@ type AggressiveOpts struct {
 	ReduceExposureAsTaker bool
 	ReductionThreshold    decimal.Decimal
 	ReductionFactor       decimal.Decimal
+	// ReductionOffset       decimal.Decimal
 }
 
 type AggressiveStrategy struct {
@@ -242,12 +243,12 @@ func (strat *AggressiveStrategy) GetEntryPriceAndVolume() (volume, entryPrice de
 	return volume.Div(strat.d.positionFactor), entryPrice.Div(strat.d.priceFactor)
 }
 
-func (strat *AggressiveStrategy) GetPubkeyBalance(settlementAsset string) (b decimal.Decimal) {
+func (strat *AggressiveStrategy) GetPubkeyBalance(assetId string) (b decimal.Decimal) {
 
 	// marketId := maps.Keys(vega)[0]
 
 	for _, acc := range strat.vegaStore.GetAccounts() {
-		if acc.Owner != strat.agentPubKey || acc.Asset != settlementAsset {
+		if acc.Owner != strat.agentPubKey || acc.Asset != assetId {
 			continue
 		}
 
@@ -255,7 +256,11 @@ func (strat *AggressiveStrategy) GetPubkeyBalance(settlementAsset string) (b dec
 		b = b.Add(balance)
 	}
 
-	return b.Div(strat.d.assetFactor)
+	assets := strat.vegaStore.GetAllAssets()
+	assetDecimals := int64(assets[assetId].GetDetails().GetDecimals())
+	assetFactor := decimal.NewFromInt(10).Pow(decimal.NewFromInt(assetDecimals))
+
+	return b.Div(assetFactor)
 }
 
 func (s *AggressiveStrategy) GetOrderSubmission() []*commandspb.OrderSubmission {
@@ -321,8 +326,8 @@ func (strat *AggressiveStrategy) RunStrategy(metricsCh chan *metrics.MetricsEven
 			// balance              = strat.GetPubkeyBalance(settlementAsset)
 			// bidVol               = strat.TargetObligationVolume.Mul(strat.TargetVolCoefficient)
 			// askVol               = strat.TargetObligationVolume.Mul(strat.TargetVolCoefficient)
-			neutralityThresholds = []float64{0.1, 0.2, 0.3, 0.4, 0.5, 0.6}
-			neutralityOffsets    = []float64{0.001, 0.0015, 0.0025, 0.0035, 0.006, 0.0085}
+			neutralityThresholds = []float64{0.1, 0.2, 0.3, 0.4, 0.5}                //, 0.6}
+			neutralityOffsets    = []float64{0.0015, 0.0025, 0.0035, 0.0055, 0.0075} //, 0.0095}
 			// bidReductionAmount   = decimal.Max(signedExposure, decimal.NewFromInt(0))
 			// askReductionAmount   = decimal.Min(signedExposure, decimal.NewFromInt(0)).Abs()
 			bidOffset = strat.InitialOffset // decimal.NewFromFloat(0.0005)
@@ -403,6 +408,23 @@ func (strat *AggressiveStrategy) RunStrategy(metricsCh chan *metrics.MetricsEven
 			askRefPrice = vegaBestBidAdj
 		}
 
+		// We need a rule to set the initial offset further towards the front of the vega book if we are not
+		// already at the front of the Vega book. This rule however should not put us in front of the Binance ref
+		// price for that side of the book. To achieve this we just set the offset to 0 in these cases but only
+		// if if does not override neutrality offsets that arise from carrying exposure.
+
+		// If the Binance best bid is less than the Vega best bid, we use binance best bid as the ref price and
+		// we set the bid offset to 0
+		if binanceBestBid.LessThanOrEqual(vegaBestBidAdj.Mul(decimal.NewFromFloat(1.0005))) && signedExposure.LessThanOrEqual(decimal.Zero) {
+			bidOffset = decimal.NewFromInt(0)
+		}
+
+		// If the Binance best ask is greater than the vega best ask, we use binance best ask as the ref price
+		// and we set the ask offset to 0.
+		if binanceBestAsk.GreaterThanOrEqual(vegaBestAskAdj.Mul(decimal.NewFromFloat(0.9995))) && signedExposure.GreaterThanOrEqual(decimal.Zero) {
+			askOffset = decimal.NewFromInt(0)
+		}
+
 		// Gradually reduce exposure over time.
 		// if !openVol.IsZero() {
 		if strat.ReduceExposureAsTaker && signedExposure.Abs().GreaterThan(strat.ReductionThreshold) {
@@ -425,18 +447,18 @@ func (strat *AggressiveStrategy) RunStrategy(metricsCh chan *metrics.MetricsEven
 				if signedExposure.IsPositive() {
 					side = vegapb.Side_SIDE_SELL
 					price = vegaBestBid
-					priceMultiplier = decimal.NewFromFloat(0.9985)
-					bidOffset = bidOffset.Add(decimal.NewFromFloat(0.0015))
+					priceMultiplier = decimal.NewFromFloat(0.99875)
+					bidOffset = bidOffset.Add(decimal.NewFromFloat(0.00125))
 					bidRefPrice = vegaBestBidAdj
 				} else {
 					side = vegapb.Side_SIDE_BUY
 					price = vegaBestAsk
-					priceMultiplier = decimal.NewFromFloat(1.0015)
-					askOffset = askOffset.Add(decimal.NewFromFloat(0.0015))
+					priceMultiplier = decimal.NewFromFloat(1.00125)
+					askOffset = askOffset.Add(decimal.NewFromFloat(0.00125))
 					askRefPrice = vegaBestAskAdj
 				}
 
-				if signedExposure.Abs().LessThan(decimal.NewFromInt(1000)) {
+				if signedExposure.Abs().LessThan(decimal.NewFromInt(100)) {
 					positionFraction = decimal.NewFromInt(1)
 				}
 

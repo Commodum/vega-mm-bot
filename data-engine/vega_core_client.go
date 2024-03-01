@@ -54,6 +54,7 @@ func (v *VegaCoreClient) Init(pubkeys []string, txInCh chan *commandspb.Transact
 }
 
 func (v *VegaCoreClient) Start() {
+	v.RunVegaCoreReconnectHandler()
 	v.StartGetLastBlockLoop()
 	v.StartSubmitTxLoop()
 }
@@ -207,29 +208,30 @@ func (v *VegaCoreClient) HandleVegaCoreReconnect() {
 
 func (v *VegaCoreClient) RunVegaCoreReconnectHandler() {
 
-	for {
-		select {
-		case <-v.reconnChan:
-			log.Println("Recieved event on Vega Core reconn channel")
+	go func() {
+		for {
+			select {
+			case <-v.reconnChan:
+				log.Println("Recieved event on Vega Core reconn channel")
 
-			v.grpcAddr = ""
-			ok := false
-			for !ok {
-				ok = v.TestVegaCoreAddrs()
-				if !ok {
-					n := 30
-					log.Printf("Failed to reconnect to a Vega core node. Waiting %v seconds before retry", n)
-					time.Sleep(time.Second * 30)
+				v.grpcAddr = ""
+				ok := false
+				for !ok {
+					ok = v.TestVegaCoreAddrs()
+					if !ok {
+						n := 30
+						log.Printf("Failed to reconnect to a Vega core node. Waiting %v seconds before retry", n)
+						time.Sleep(time.Second * 30)
+					}
 				}
+
+				log.Println("Found available Vega Core API. Finished reconnecting.")
+				v.reconnecting = false
+
+				// Restart the submit tx loop after successful reconnect.
+				v.StartSubmitTxLoop()
+				v.StartGetLastBlockLoop()
 			}
-
-			log.Println("Found available Vega Core API. Finished reconnecting.")
-			v.reconnecting = false
-
-			// Restart the submit tx loop after successful reconnect.
-			v.StartSubmitTxLoop()
-			v.StartGetLastBlockLoop()
 		}
-	}
-
+	}()
 }

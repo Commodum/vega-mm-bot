@@ -15,6 +15,8 @@ import (
 
 type MetricsEventType int
 
+// Maybe we should add a Venue metrics event as well so that
+// we can keep track of metrics specific to each trading venue.
 const (
 	MetricsEventType_Unspecified MetricsEventType = iota
 	MetricsEventType_Strategy
@@ -68,9 +70,20 @@ type StrategyMetricsData struct {
 	TimeSinceMarketDataUpdate int
 }
 
-type AgentMetricsData struct{}
+type AgentMetricsData struct {
+	Pubkey      string
+	PubkeyIndex int
+	VEGABalance decimal.Decimal
+	USDTBalance decimal.Decimal
+}
+
 type DataEngineMetricsData struct{}
-type TradingEngineMetricsData struct{}
+
+type TradingEngineMetricsData struct {
+	VEGABalance decimal.Decimal
+	USDTBalance decimal.Decimal
+}
+
 type PowMetricsData struct{}
 
 type StrategyMetrics struct {
@@ -83,6 +96,16 @@ type StrategyMetrics struct {
 	CumulativeOrderCount      *prom.CounterVec
 	MarketDataUpdateCount     *prom.GaugeVec
 	TimeSinceMarketDataUpdate *prom.GaugeVec
+}
+
+type AgentMetrics struct {
+	VEGABalance *prom.GaugeVec
+	USDTBalance *prom.GaugeVec
+}
+
+type TradingEngineMetrics struct {
+	VEGABalance prom.Gauge
+	USDTBalance prom.Gauge
 }
 
 type MetricsEvent struct {
@@ -107,14 +130,12 @@ func (m *MetricsServer) HandleEvent(evt *MetricsEvent) {
 	case MetricsEventType_Strategy:
 		m.handleStrategyMetricsData(data.(*StrategyMetricsData))
 	case MetricsEventType_Agent:
-		data = data.(*AgentMetricsData)
-		log.Printf("No handling implemented for event of type: %v", evtType.String())
+		m.handleAgentMetricsData(data.(*AgentMetricsData))
 	case MetricsEventType_DataEngine:
 		data = data.(*DataEngineMetricsData)
 		log.Printf("No handling implemented for event of type: %v", evtType.String())
 	case MetricsEventType_TradingEngine:
-		data = data.(*TradingEngineMetricsData)
-		log.Printf("No handling implemented for event of type: %v", evtType.String())
+		m.handleTradingEngineMetricsData(data.(*TradingEngineMetricsData))
 	case MetricsEventType_Pow:
 		data = data.(*PowMetricsData)
 		log.Printf("No handling implemented for event of type: %v", evtType.String())
@@ -128,7 +149,9 @@ type MetricsServer struct {
 	inCh     chan *MetricsEvent
 	registry *prom.Registry
 
-	strategyMetrics *StrategyMetrics
+	strategyMetrics      *StrategyMetrics
+	agentMetrics         *AgentMetrics
+	tradingEngineMetrics *TradingEngineMetrics
 }
 
 func NewMetricsServer(port string) *MetricsServer {
@@ -140,9 +163,13 @@ func NewMetricsServer(port string) *MetricsServer {
 }
 
 func (m *MetricsServer) Init() chan *MetricsEvent {
-	m.SetMetrics()
+	m.SetStrategyMetrics()
+	m.SetAgentMetrics()
+	m.SetTradingEngineMetrics()
 
 	m.RegisterStrategyMetrics()
+	m.RegisterAgentMetrics()
+	m.RegisterTradingEngineMetrics()
 
 	return m.inCh
 }
@@ -159,7 +186,7 @@ func (m *MetricsServer) Start() {
 	log.Fatal(http.ListenAndServe(m.Port, nil))
 }
 
-func (m *MetricsServer) SetMetrics() {
+func (m *MetricsServer) SetStrategyMetrics() {
 	m.strategyMetrics = &StrategyMetrics{
 		SignedExposure: prom.NewGaugeVec(prom.GaugeOpts{
 			Namespace: "vega_mm",
@@ -220,8 +247,50 @@ func (m *MetricsServer) SetMetrics() {
 	}
 }
 
+func (m *MetricsServer) SetAgentMetrics() {
+	m.agentMetrics = &AgentMetrics{
+		VEGABalance: prom.NewGaugeVec(prom.GaugeOpts{
+			Namespace: "vega_mm",
+			Name:      "vega_balance",
+			Help:      "The current balance of VEGA tokens for the agent.",
+		}, []string{
+			"pubkey",
+		}),
+		USDTBalance: prom.NewGaugeVec(prom.GaugeOpts{
+			Namespace: "vega_mm",
+			Name:      "usdt_balance",
+			Help:      "The current balance of USDT for the agent.",
+		}, []string{
+			"pubkey",
+		}),
+	}
+}
+
+func (m *MetricsServer) SetTradingEngineMetrics() {
+	m.tradingEngineMetrics = &TradingEngineMetrics{
+		VEGABalance: prom.NewGauge(prom.GaugeOpts{
+			Namespace: "vega_mm",
+			Name:      "global_vega_balance",
+			Help:      "The current global balance of VEGA tokens.",
+		}),
+		USDTBalance: prom.NewGauge(prom.GaugeOpts{
+			Namespace: "vega_mm",
+			Name:      "global_usdt_balance",
+			Help:      "The current global balance of USDT.",
+		}),
+	}
+}
+
 func (m *MetricsServer) GetStrategyMetrics() *StrategyMetrics {
 	return m.strategyMetrics
+}
+
+func (m *MetricsServer) GetAgentMetrics() *AgentMetrics {
+	return m.agentMetrics
+}
+
+func (m *MetricsServer) GetTradingEngineMetrics() *TradingEngineMetrics {
+	return m.tradingEngineMetrics
 }
 
 func (m *MetricsServer) RegisterStrategyMetrics() {
@@ -235,6 +304,16 @@ func (m *MetricsServer) RegisterStrategyMetrics() {
 	m.registry.MustRegister(m.strategyMetrics.MarketDataUpdateCount)
 }
 
+func (m *MetricsServer) RegisterAgentMetrics() {
+	m.registry.MustRegister(m.agentMetrics.VEGABalance)
+	m.registry.MustRegister(m.agentMetrics.USDTBalance)
+}
+
+func (m *MetricsServer) RegisterTradingEngineMetrics() {
+	m.registry.MustRegister(m.tradingEngineMetrics.VEGABalance)
+	m.registry.MustRegister(m.tradingEngineMetrics.USDTBalance)
+}
+
 func (m *MetricsServer) handleStrategyMetricsData(data *StrategyMetricsData) {
 	metrics := m.GetStrategyMetrics()
 	metrics.SignedExposure.With(prom.Labels{"ticker": data.BinanceTicker, "pubkey": data.AgentPubkey}).Set(data.SignedExposure.InexactFloat64())
@@ -245,4 +324,16 @@ func (m *MetricsServer) handleStrategyMetricsData(data *StrategyMetricsData) {
 	metrics.LiveOrderCount.With(prom.Labels{"ticker": data.BinanceTicker, "pubkey": data.AgentPubkey}).Set(float64(data.LiveOrdersCount))
 	metrics.CumulativeOrderCount.With(prom.Labels{"ticker": data.BinanceTicker, "pubkey": data.AgentPubkey}).Add(float64(data.LiveOrdersCount))
 	metrics.MarketDataUpdateCount.With(prom.Labels{"ticker": data.BinanceTicker, "pubkey": data.AgentPubkey}).Set(float64(data.MarketDataUpdateCount))
+}
+
+func (m *MetricsServer) handleAgentMetricsData(data *AgentMetricsData) {
+	metrics := m.GetAgentMetrics()
+	metrics.VEGABalance.With(prom.Labels{"pubkey": data.Pubkey}).Set(data.VEGABalance.InexactFloat64())
+	metrics.USDTBalance.With(prom.Labels{"pubkey": data.Pubkey}).Set(data.USDTBalance.InexactFloat64())
+}
+
+func (m *MetricsServer) handleTradingEngineMetricsData(data *TradingEngineMetricsData) {
+	metrics := m.GetTradingEngineMetrics()
+	metrics.VEGABalance.Set(data.VEGABalance.InexactFloat64())
+	metrics.USDTBalance.Set(data.USDTBalance.InexactFloat64())
 }

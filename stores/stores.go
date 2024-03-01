@@ -114,6 +114,18 @@ func (v *VegaStore) GetAsset(assetId string) *vegapb.Asset {
 	return v.assets[assetId]
 }
 
+func (v *VegaStore) GetAllAssets() map[string]*vegapb.Asset {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+
+	assets := map[string]*vegapb.Asset{}
+	for key, value := range v.assets {
+		assets[key] = value
+	}
+
+	return assets
+}
+
 func (v *VegaStore) SetMarketData(marketData *vegapb.MarketData) {
 	v.mu.Lock()
 	defer v.mu.Unlock()

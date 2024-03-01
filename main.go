@@ -206,9 +206,9 @@ func GetMainnetStrategies() []strats.Strategy {
 			TargetVolCoefficient:   decimal.NewFromFloat(1.1),
 		},
 		Specific: &strats.AggressiveOpts{
-			InitialOffset:         decimal.NewFromFloat(0.0075),
+			InitialOffset:         decimal.NewFromFloat(0.0015),
 			ReduceExposureAsTaker: true,
-			ReductionThreshold:    decimal.NewFromInt(0),
+			ReductionThreshold:    decimal.NewFromInt(250),
 			ReductionFactor:       decimal.NewFromFloat(0.15),
 		},
 	}
@@ -223,9 +223,9 @@ func GetMainnetStrategies() []strats.Strategy {
 			TargetVolCoefficient:   decimal.NewFromFloat(1.1),
 		},
 		Specific: &strats.AggressiveOpts{
-			InitialOffset:         decimal.NewFromFloat(0.0075),
+			InitialOffset:         decimal.NewFromFloat(0.0015),
 			ReduceExposureAsTaker: true,
-			ReductionThreshold:    decimal.NewFromInt(0),
+			ReductionThreshold:    decimal.NewFromInt(250),
 			ReductionFactor:       decimal.NewFromFloat(0.15),
 		},
 	}
@@ -240,10 +240,10 @@ func GetMainnetStrategies() []strats.Strategy {
 			TargetVolCoefficient:   decimal.NewFromFloat(1.1),
 		},
 		Specific: &strats.AggressiveOpts{
-			InitialOffset:         decimal.NewFromFloat(0.01),
+			InitialOffset:         decimal.NewFromFloat(0.0025),
 			ReduceExposureAsTaker: true,
-			ReductionThreshold:    decimal.NewFromInt(0),
-			ReductionFactor:       decimal.NewFromFloat(0.15),
+			ReductionThreshold:    decimal.NewFromInt(200),
+			ReductionFactor:       decimal.NewFromFloat(0.125),
 		},
 	}
 
@@ -257,10 +257,10 @@ func GetMainnetStrategies() []strats.Strategy {
 			TargetVolCoefficient:   decimal.NewFromFloat(1.1),
 		},
 		Specific: &strats.AggressiveOpts{
-			InitialOffset:         decimal.NewFromFloat(0.01),
+			InitialOffset:         decimal.NewFromFloat(0.00225),
 			ReduceExposureAsTaker: true,
-			ReductionThreshold:    decimal.NewFromInt(0),
-			ReductionFactor:       decimal.NewFromFloat(0.15),
+			ReductionThreshold:    decimal.NewFromInt(200),
+			ReductionFactor:       decimal.NewFromFloat(0.125),
 		},
 	}
 
@@ -274,7 +274,7 @@ func GetMainnetStrategies() []strats.Strategy {
 			TargetVolCoefficient:   decimal.NewFromFloat(1.1),
 		},
 		Specific: &strats.AggressiveOpts{
-			InitialOffset:         decimal.NewFromFloat(0.0075),
+			InitialOffset:         decimal.NewFromFloat(0.00625),
 			ReduceExposureAsTaker: false,
 			ReductionThreshold:    decimal.NewFromInt(0),
 			ReductionFactor:       decimal.NewFromFloat(0.15),

@@ -2,6 +2,7 @@ package trading
 
 import (
 	"log"
+	"sync"
 	"vega-mm/metrics"
 	"vega-mm/pow"
 
@@ -15,6 +16,8 @@ import (
 )
 
 type Agent struct {
+	mu sync.RWMutex
+
 	index      uint64
 	pubkey     string
 	apiToken   string
@@ -22,6 +25,7 @@ type Agent struct {
 	strategies map[string]strats.Strategy
 	txDataCh   chan *commandspb.InputData
 	signer     *wallets.VegaSigner
+	data       *AgentData
 	// config     *Config
 	// metricsCh  chan *MetricsState
 }
@@ -34,9 +38,10 @@ type Position struct {
 }
 
 type AgentBalance struct {
-	Venue   string
-	Asset   string
-	Balance decimal.Decimal
+	Venue     string
+	AssetName string
+	AssetId   string
+	Balance   decimal.Decimal
 }
 
 type AgentData struct {
@@ -48,13 +53,18 @@ type AgentData struct {
 func NewAgent(keyPair *wallets.VegaKeyPair, txBroadcastCh chan *commandspb.Transaction) *Agent {
 	signer := wallets.NewVegaSigner(keyPair, txBroadcastCh)
 	agent := &Agent{
+		mu: sync.RWMutex{},
+
 		index:      keyPair.Index(),
 		pubkey:     keyPair.PubKey(),
 		strategies: map[string]strats.Strategy{},
+		signer:     signer,
 
-		// We need to get the gRPC addresses to the clients
+		data: &AgentData{
+			Positions: []*Position{},
+			Balances:  []*AgentBalance{},
+		},
 
-		signer: signer,
 		// config:    config,
 		// metricsCh: make(chan *MetricsState),
 	}
@@ -126,9 +136,7 @@ func (a *Agent) RunStrategies(metricsCh chan *metrics.MetricsEvent) {
 
 func (a *Agent) GetStrategies() []strats.Strategy {
 	s := []strats.Strategy{}
-	for _, strat := range maps.Values(a.strategies) {
-		s = append(s, strat)
-	}
+	s = append(s, maps.Values(a.strategies)...)
 	return s
 }
 
@@ -154,27 +162,63 @@ func (a *Agent) GetPositions() (p []*Position) {
 	return
 }
 
-func (a *Agent) GetBalances() (b []*AgentBalance) {
+func (a *Agent) GetBalances() []*AgentBalance {
+
+	b := []*AgentBalance{}
+
+	// We should really get these programatically instead of hardcoded...
+	assets := map[string]string{
+		"bf1e88d19db4b3ca0d1d5bdb73718a01686b18cf731ca26adedf3c8b83802bba": "USDT",
+		"d1984e3d365faa05bcafbe41f50f90e3663ee7c0da22bb1e24b164e9532691b2": "VEGA",
+	}
 
 	type void struct{}
-	assets := map[string]void{}
+	seenAssets := map[string]void{}
 
+	// Get settlement asset balances
 	for _, strat := range a.strategies {
 		settlementAsset := strat.GetMarketSettlementAsset()
-		if _, ok := assets[settlementAsset]; ok {
+		if _, ok := assets[settlementAsset]; !ok {
+			log.Printf("error: no asset found with asset id: %s", settlementAsset)
+			continue
+		}
+		if _, ok := seenAssets[settlementAsset]; ok {
 			continue
 		}
 
-		assets[settlementAsset] = void{}
+		seenAssets[settlementAsset] = void{}
 
-		balance := strat.GetAgentPubKeyBalance()
+		balance := strat.GetPubkeyBalance(settlementAsset)
+		// balance := strat.GetAgentPubKeyBalance()
 
 		b = append(b, &AgentBalance{
-			Venue:   "Vega",
-			Asset:   "USDT", // We only have USDT markets for now
-			Balance: balance,
+			Venue:     "Vega",
+			AssetName: assets[settlementAsset], // We only have USDT markets for now
+			AssetId:   settlementAsset,
+			Balance:   balance,
 		})
 	}
 
-	return
+	// Get a strategy
+	strat := func() strats.Strategy {
+		for _, strat := range a.strategies {
+			return strat
+		}
+		return nil
+	}()
+	if strat == nil {
+		log.Printf("Could not get VEGA balance: nil strategy returned from map.")
+		return b
+	}
+
+	// Get VEGA token balance
+	balance := strat.GetPubkeyBalance("d1984e3d365faa05bcafbe41f50f90e3663ee7c0da22bb1e24b164e9532691b2")
+	b = append(b, &AgentBalance{
+		Venue:     "Vega",
+		AssetName: "VEGA",
+		AssetId:   "d1984e3d365faa05bcafbe41f50f90e3663ee7c0da22bb1e24b164e9532691b2",
+		Balance:   balance,
+	})
+
+	return b
 }

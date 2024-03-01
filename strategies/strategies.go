@@ -62,6 +62,8 @@ type Strategy interface {
 	GetAgentPubKey() string
 	SetAgentPubKeyBalance(decimal.Decimal)
 	GetAgentPubKeyBalance() decimal.Decimal
+	
+	GetPubkeyBalance(string) decimal.Decimal
 
 	GetOurBestBidAndAsk([]*vegapb.Order) (decimal.Decimal, decimal.Decimal)
 
