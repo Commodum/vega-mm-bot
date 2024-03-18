@@ -21,6 +21,7 @@ type VegaStore struct {
 	marketData         *vegapb.MarketData
 	accounts           map[string]*apipb.AccountBalance
 	orders             map[string]*vegapb.Order
+	externalOrders     map[string]*vegapb.Order
 	position           *vegapb.Position
 	liquidityProvision *vegapb.LiquidityProvision
 	stakeToCcyVolume   string
@@ -45,6 +46,7 @@ func NewVegaStore(marketId string) *VegaStore {
 		assets:                  map[string]*vegapb.Asset{},
 		accounts:                map[string]*apipb.AccountBalance{},
 		orders:                  map[string]*vegapb.Order{},
+		externalOrders:          map[string]*vegapb.Order{},
 		marketDataUpdateCounter: 0,
 	}
 }
@@ -162,6 +164,31 @@ func (v *VegaStore) ClearOrders() {
 		delete(v.orders, id)
 	}
 
+}
+
+func (v *VegaStore) SetExternalOrders(orders []*vegapb.Order) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+
+	var orderCount, deleteCount int
+	for _, ord := range orders {
+		if ord.Status != vegapb.Order_STATUS_ACTIVE {
+			delete(v.externalOrders, ord.Id)
+			deleteCount += 1
+			continue
+		}
+
+		v.externalOrders[ord.Id] = ord
+
+		orderCount += 1
+	}
+}
+
+func (v *VegaStore) GetExternalOrders() []*vegapb.Order {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+
+	return maps.Values(v.externalOrders)
 }
 
 func (v *VegaStore) SetOrders(orders []*vegapb.Order) {

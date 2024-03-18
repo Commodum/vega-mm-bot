@@ -72,6 +72,12 @@ func (b *BinanceClient) RunBinanceReconnectHandler() {
 }
 
 func (b *BinanceClient) Start(wg *sync.WaitGroup) {
+
+	if len(b.storesMap) == 0 {
+		wg.Done()
+		return
+	}
+
 	go b.RunBinanceReconnectHandler()
 	go b.StreamBinanceData(wg)
 }

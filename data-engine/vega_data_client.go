@@ -474,7 +474,8 @@ func (v *VegaDataClient) streamAccounts() {
 
 func (v *VegaDataClient) streamOrders() {
 
-	stream, err := v.svc.ObserveOrders(context.Background(), &apipb.ObserveOrdersRequest{MarketIds: v.vegaMarkets, PartyIds: v.agentPubkeys})
+	// stream, err := v.svc.ObserveOrders(context.Background(), &apipb.ObserveOrdersRequest{MarketIds: v.vegaMarkets, PartyIds: v.agentPubkeys})
+	stream, err := v.svc.ObserveOrders(context.Background(), &apipb.ObserveOrdersRequest{MarketIds: v.vegaMarkets})
 	if err != nil {
 		log.Printf("Failed to start Orders stream: %v\n", err)
 		v.handleGrpcReconnect()
@@ -506,21 +507,34 @@ func (v *VegaDataClient) streamOrders() {
 			for _, order := range r.Snapshot.Orders {
 				orderMap[order.MarketId][order.PartyId] = append(orderMap[order.MarketId][order.PartyId], order)
 			}
-			for _, store := range v.storesSlice {
-				store.SetOrders(orderMap[store.GetMarketId()][store.GetAgentPubKey()])
-				orderMap[store.GetMarketId()][store.GetAgentPubKey()] = nil
-			}
+			v.storeOrders(orderMap)
+
 		case *apipb.ObserveOrdersResponse_Updates:
 			for _, order := range r.Updates.Orders {
 				orderMap[order.MarketId][order.PartyId] = append(orderMap[order.MarketId][order.PartyId], order)
 			}
-			for _, store := range v.storesSlice {
-				store.SetOrders(orderMap[store.GetMarketId()][store.GetAgentPubKey()])
-				orderMap[store.GetMarketId()][store.GetAgentPubKey()] = nil
-			}
+			v.storeOrders(orderMap)
+
 		}
 	}
+}
 
+func (v *VegaDataClient) storeOrders(orderMap map[string]map[string][]*vegapb.Order) {
+	for _, store := range v.storesSlice {
+		marketOrders := orderMap[store.GetMarketId()]
+		store.SetOrders(marketOrders[store.GetAgentPubKey()])
+		marketOrders[store.GetAgentPubKey()] = nil
+
+		externalOrders := []*vegapb.Order{}
+		for pubkey, partyOrders := range marketOrders {
+			if pubkey == store.GetAgentPubKey() {
+				continue
+			}
+			externalOrders = append(externalOrders, partyOrders...)
+		}
+
+		store.SetExternalOrders(externalOrders)
+	}
 }
 
 func (v *VegaDataClient) streamPositions() {

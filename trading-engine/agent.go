@@ -10,6 +10,7 @@ import (
 	"vega-mm/strategies"
 	"vega-mm/wallets"
 
+	vegapb "code.vegaprotocol.io/vega/protos/vega"
 	commandspb "code.vegaprotocol.io/vega/protos/vega/commands/v1"
 	"github.com/shopspring/decimal"
 	"golang.org/x/exp/maps"
@@ -98,8 +99,19 @@ func (a *Agent) LoadVegaDecimals() {
 	log.Printf("Loading Vega decimals.")
 	for _, strat := range maps.Values(a.strategies) {
 		market := strat.GetVegaStore().GetMarket()
-		asset := strat.GetVegaStore().GetAsset(market.GetTradableInstrument().GetInstrument().GetPerpetual().SettlementAsset)
+		instrument := market.GetTradableInstrument().GetInstrument()
 
+		var settlementAsset string
+		switch instrument.GetProduct().(type) {
+		case *vegapb.Instrument_Future:
+			settlementAsset = instrument.GetFuture().SettlementAsset
+		case *vegapb.Instrument_Perpetual:
+			settlementAsset = instrument.GetPerpetual().SettlementAsset
+		case *vegapb.Instrument_Spot:
+			panic("We do not trade spot right now.")
+		}
+
+		asset := strat.GetVegaStore().GetAsset(settlementAsset)
 		strat.SetVegaDecimals(market.PositionDecimalPlaces, int64(market.DecimalPlaces), int64(asset.Details.Decimals))
 	}
 
@@ -114,6 +126,12 @@ func (agent *Agent) UpdateLiquidityCommitments() {
 
 		lpCommitment := strat.GetVegaStore().GetLiquidityProvision()
 		targetObligationVolume := strat.GetTargetObligationVolume()
+
+		// TODO: Investiage why this func doesn't seem to work...
+		log.Printf("LP Commitment: %+v", lpCommitment)
+		log.Printf("Target Obligation Volume: %d", targetObligationVolume)
+
+		continue
 
 		switch true {
 		case (lpCommitment != nil && targetObligationVolume.IsZero()):
@@ -131,6 +149,15 @@ func (agent *Agent) UpdateLiquidityCommitments() {
 func (a *Agent) RunStrategies(metricsCh chan *metrics.MetricsEvent) {
 	for _, strat := range maps.Values(a.strategies) {
 		go strat.RunStrategy(metricsCh)
+		// if strat.GetVegaMarketId() != "e63a37edae8b74599d976f5dedbf3316af82579447f7a08ae0495a021fd44d13" || strat.GetVegaMarketId() != "4e9081e20e9e81f3e747d42cb0c9b8826454df01899e6027a22e771e19cc79fc" {
+		// 	strat.CancelLiquidityCommitment()
+		// }
+
+		////// EGLPUSDT LP Cancellation //////
+		// if strat.GetVegaMarketId() == "fc37a1eedb6e57b86823e2fc42480a0b9236aea556c1d7df49be697a93f8f2a0" {
+		// 	strat.CancelLiquidityCommitment()
+		// }
+
 	}
 }
 

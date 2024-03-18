@@ -341,11 +341,6 @@ func (strat *MartingaleStrategy) GetOrderSubmission(binanceRefPrice, vegaRefPric
 	// that it's magnitude is the same size as the difference between the firstPrice and the refPrice.
 	// This way the farthest that the offset can move the first order is to the front of the book and
 	// not beyond
-	if side == vegapb.Side_SIDE_BUY {
-
-	} else {
-
-	}
 
 	riskParams := logNormalRiskModel.GetParams()
 

@@ -1,6 +1,7 @@
 package data
 
 import (
+	"log"
 	"sync"
 	"vega-mm/pow"
 	"vega-mm/stores"
@@ -61,6 +62,10 @@ func (d *DataEngine) RegisterStrategies(strategies []strats.Strategy) *DataEngin
 	for _, strat := range strategies {
 		agentPubkeys[strat.GetAgentPubKey()] = struct{}{}
 		d.vegaStores = append(d.vegaStores, strat.GetVegaStore())
+		if strat.GetBinanceStore() == nil {
+			log.Printf("No binance store for strategy...")
+			continue
+		}
 		d.binanceStores = append(d.binanceStores, strat.GetBinanceStore())
 	}
 

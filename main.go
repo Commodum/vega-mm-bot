@@ -201,15 +201,16 @@ func GetMainnetStrategies() []strats.Strategy {
 			AgentKeyPairIdx:        1,
 			VegaMarketId:           "4e9081e20e9e81f3e747d42cb0c9b8826454df01899e6027a22e771e19cc79fc",
 			BinanceMarket:          "BTCUSDT",
-			LiquidityCommitment:    true,
+			LiquidityCommitment:    false,
 			TargetObligationVolume: decimal.NewFromInt(200000),
 			TargetVolCoefficient:   decimal.NewFromFloat(1.1),
 		},
 		Specific: &strats.AggressiveOpts{
-			InitialOffset:         decimal.NewFromFloat(0.0015),
-			ReduceExposureAsTaker: true,
-			ReductionThreshold:    decimal.NewFromInt(250),
+			InitialOffset:         decimal.NewFromFloat(0.0125),
+			ReduceExposureAsTaker: false,
+			ReductionThreshold:    decimal.NewFromInt(0),
 			ReductionFactor:       decimal.NewFromFloat(0.15),
+			HighAggression:        false,
 		},
 	}
 
@@ -218,15 +219,16 @@ func GetMainnetStrategies() []strats.Strategy {
 			AgentKeyPairIdx:        1,
 			VegaMarketId:           "e63a37edae8b74599d976f5dedbf3316af82579447f7a08ae0495a021fd44d13",
 			BinanceMarket:          "ETHUSDT",
-			LiquidityCommitment:    true,
+			LiquidityCommitment:    false,
 			TargetObligationVolume: decimal.NewFromInt(200000),
 			TargetVolCoefficient:   decimal.NewFromFloat(1.1),
 		},
 		Specific: &strats.AggressiveOpts{
-			InitialOffset:         decimal.NewFromFloat(0.0015),
+			InitialOffset:         decimal.NewFromFloat(0.0125),
 			ReduceExposureAsTaker: true,
-			ReductionThreshold:    decimal.NewFromInt(250),
+			ReductionThreshold:    decimal.NewFromInt(0),
 			ReductionFactor:       decimal.NewFromFloat(0.15),
+			HighAggression:        false,
 		},
 	}
 
@@ -235,15 +237,16 @@ func GetMainnetStrategies() []strats.Strategy {
 			AgentKeyPairIdx:        2,
 			VegaMarketId:           "b0ef037ff334cb83f80897b92ce197b440e27af47e671cd59933595e942abfc9",
 			BinanceMarket:          "INJUSDT",
-			LiquidityCommitment:    true,
-			TargetObligationVolume: decimal.NewFromInt(15000),
+			LiquidityCommitment:    false,
+			TargetObligationVolume: decimal.NewFromInt(0),
 			TargetVolCoefficient:   decimal.NewFromFloat(1.1),
 		},
 		Specific: &strats.AggressiveOpts{
-			InitialOffset:         decimal.NewFromFloat(0.0025),
+			InitialOffset:         decimal.NewFromFloat(0.005),
 			ReduceExposureAsTaker: true,
-			ReductionThreshold:    decimal.NewFromInt(200),
+			ReductionThreshold:    decimal.NewFromInt(0),
 			ReductionFactor:       decimal.NewFromFloat(0.125),
+			HighAggression:        false,
 		},
 	}
 
@@ -252,15 +255,16 @@ func GetMainnetStrategies() []strats.Strategy {
 			AgentKeyPairIdx:        3,
 			VegaMarketId:           "5ec43c5d3570ff001b5072faeeff56b4320124175a76a1b624df80169b1ece5e",
 			BinanceMarket:          "SNXUSDT",
-			LiquidityCommitment:    true,
-			TargetObligationVolume: decimal.NewFromInt(15000),
+			LiquidityCommitment:    false,
+			TargetObligationVolume: decimal.NewFromInt(0),
 			TargetVolCoefficient:   decimal.NewFromFloat(1.1),
 		},
 		Specific: &strats.AggressiveOpts{
-			InitialOffset:         decimal.NewFromFloat(0.00225),
+			InitialOffset:         decimal.NewFromFloat(0.005),
 			ReduceExposureAsTaker: true,
-			ReductionThreshold:    decimal.NewFromInt(200),
+			ReductionThreshold:    decimal.NewFromInt(0),
 			ReductionFactor:       decimal.NewFromFloat(0.125),
+			HighAggression:        false,
 		},
 	}
 
@@ -269,15 +273,37 @@ func GetMainnetStrategies() []strats.Strategy {
 			AgentKeyPairIdx:        4,
 			VegaMarketId:           "603f891b390fa67ac1a7b8f520c743e776cf58da7b8637e2572d556ba55f2878",
 			BinanceMarket:          "LDOUSDT",
-			LiquidityCommitment:    true,
-			TargetObligationVolume: decimal.NewFromInt(10000),
+			LiquidityCommitment:    false,
+			TargetObligationVolume: decimal.NewFromInt(0),
 			TargetVolCoefficient:   decimal.NewFromFloat(1.1),
 		},
 		Specific: &strats.AggressiveOpts{
-			InitialOffset:         decimal.NewFromFloat(0.00625),
+			InitialOffset:         decimal.NewFromFloat(0.02),
 			ReduceExposureAsTaker: false,
 			ReductionThreshold:    decimal.NewFromInt(0),
 			ReductionFactor:       decimal.NewFromFloat(0.15),
+			HighAggression:        false,
+		},
+	}
+
+	eglpPointsStrategyOpts := &strats.StrategyOpts[strats.Points]{
+		General: &strats.GeneralOpts{
+			AgentKeyPairIdx:        2,
+			VegaMarketId:           "fc37a1eedb6e57b86823e2fc42480a0b9236aea556c1d7df49be697a93f8f2a0",
+			BinanceMarket:          "EGLPUSDT",
+			NoBinance:              true,
+			NumOrdersPerSide:       10,
+			LiquidityCommitment:    true,
+			TargetObligationVolume: decimal.NewFromInt(10000),
+			TargetVolCoefficient:   decimal.NewFromFloat(1.075),
+		},
+		Specific: &strats.PointsOpts{
+			InitialOffset:         decimal.NewFromFloat(0.0045),
+			ReduceExposureAsTaker: true,
+			ReductionThreshold:    decimal.NewFromInt(250),
+			ReductionFactor:       decimal.NewFromFloat(0.12),
+			OrderSpacing:          decimal.NewFromFloat(0.0035),
+			OrderSizeBase:         decimal.NewFromFloat(1.8),
 		},
 	}
 
@@ -287,14 +313,20 @@ func GetMainnetStrategies() []strats.Strategy {
 	snxAggressiveStrategy := strats.NewAggressiveStrategy(snxAggressiveStrategyOpts)
 	ldoAggressiveStrategy := strats.NewAggressiveStrategy(ldoAggressiveStrategyOpts)
 
-	// _ = btcAggressiveStrategy
-	// _ = ethAggressiveStrategy
-	// _ = ldoAggressiveStrategy
-	s = append(s, btcAggressiveStrategy)
-	s = append(s, ethAggressiveStrategy)
-	s = append(s, injAggressiveStrategy)
-	s = append(s, snxAggressiveStrategy)
-	s = append(s, ldoAggressiveStrategy)
+	eglpPointsStrategy := strats.NewPointsStrategy(eglpPointsStrategyOpts)
+
+	_ = btcAggressiveStrategy
+	_ = ethAggressiveStrategy
+	_ = injAggressiveStrategy
+	_ = snxAggressiveStrategy
+	_ = ldoAggressiveStrategy
+	// s = append(s, btcAggressiveStrategy)
+	// s = append(s, ethAggressiveStrategy)
+	// s = append(s, injAggressiveStrategy)
+	// s = append(s, snxAggressiveStrategy)
+	// s = append(s, ldoAggressiveStrategy)
+
+	s = append(s, eglpPointsStrategy)
 
 	// btcMartingaleStrategy := strats.NewMartingaleStrategy(btcMartingaleStrategyOpts)
 	// ethMartingaleStrategy := strats.NewMartingaleStrategy(ethMartingaleStrategyOpts)

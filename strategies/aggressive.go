@@ -32,6 +32,7 @@ type AggressiveOpts struct {
 	ReductionThreshold    decimal.Decimal
 	ReductionFactor       decimal.Decimal
 	// ReductionOffset       decimal.Decimal
+	HighAggression bool
 }
 
 type AggressiveStrategy struct {
@@ -409,20 +410,23 @@ func (strat *AggressiveStrategy) RunStrategy(metricsCh chan *metrics.MetricsEven
 		}
 
 		// We need a rule to set the initial offset further towards the front of the vega book if we are not
-		// already at the front of the Vega book. This rule however should not put us in front of the Binance ref
-		// price for that side of the book. To achieve this we just set the offset to 0 in these cases but only
-		// if if does not override neutrality offsets that arise from carrying exposure.
+		// already at the front of the Vega book.
 
-		// If the Binance best bid is less than the Vega best bid, we use binance best bid as the ref price and
-		// we set the bid offset to 0
-		if binanceBestBid.LessThanOrEqual(vegaBestBidAdj.Mul(decimal.NewFromFloat(1.0005))) && signedExposure.LessThanOrEqual(decimal.Zero) {
-			bidOffset = decimal.NewFromInt(0)
-		}
+		// We could modify the rules below to allow us to quote in front of the binance best price but only
+		// by a small amount.
 
-		// If the Binance best ask is greater than the vega best ask, we use binance best ask as the ref price
-		// and we set the ask offset to 0.
-		if binanceBestAsk.GreaterThanOrEqual(vegaBestAskAdj.Mul(decimal.NewFromFloat(0.9995))) && signedExposure.GreaterThanOrEqual(decimal.Zero) {
-			askOffset = decimal.NewFromInt(0)
+		if strat.HighAggression {
+			// If the Binance best bid is less than the Vega best bid, we use binance best bid as the ref price and
+			// we set the bid offset to 0
+			if binanceBestBid.LessThanOrEqual(vegaBestBidAdj.Mul(decimal.NewFromFloat(1.0005))) && signedExposure.LessThanOrEqual(decimal.Zero) {
+				bidOffset = decimal.NewFromInt(0)
+			}
+
+			// If the Binance best ask is greater than the vega best ask, we use binance best ask as the ref price
+			// and we set the ask offset to 0.
+			if binanceBestAsk.GreaterThanOrEqual(vegaBestAskAdj.Mul(decimal.NewFromFloat(0.9995))) && signedExposure.GreaterThanOrEqual(decimal.Zero) {
+				askOffset = decimal.NewFromInt(0)
+			}
 		}
 
 		// Gradually reduce exposure over time.
@@ -458,7 +462,7 @@ func (strat *AggressiveStrategy) RunStrategy(metricsCh chan *metrics.MetricsEven
 					askRefPrice = vegaBestAskAdj
 				}
 
-				if signedExposure.Abs().LessThan(decimal.NewFromInt(100)) {
+				if signedExposure.Abs().LessThan(decimal.NewFromInt(500)) {
 					positionFraction = decimal.NewFromInt(1)
 				}
 
@@ -482,6 +486,20 @@ func (strat *AggressiveStrategy) RunStrategy(metricsCh chan *metrics.MetricsEven
 
 		bidPrice := bidRefPrice.Mul(decimal.NewFromInt(1).Sub(bidOffset))
 		askPrice := askRefPrice.Mul(decimal.NewFromInt(1).Add(askOffset))
+
+		// If the bidPrice is less than the vegaBestBid and the vegaBestBid is within 10bp of the
+		// binanceBestBid then we quote at the vegaBestBid
+		// if bidPrice.LessThanOrEqual(vegaBestBidAdj) &&
+		// 	vegaBestBidAdj.LessThanOrEqual(binanceBestBid.Mul(decimal.NewFromFloat(1.001))) &&
+		// 	signedExposure.LessThanOrEqual(decimal.NewFromInt(250)) {
+		// 	bidPrice = vegaBestBidAdj
+		// }
+
+		// if askPrice.GreaterThanOrEqual(vegaBestAskAdj) &&
+		// 	vegaBestAskAdj.GreaterThanOrEqual(binanceBestAsk.Mul(decimal.NewFromFloat(0.999))) &&
+		// 	signedExposure.GreaterThanOrEqual(decimal.NewFromInt(-250)) {
+		// 	askPrice = vegaBestAskAdj
+		// }
 
 		log.Printf("%v: bidPrice: %v, askPrice: %v", strat.BinanceMarket, bidPrice, askPrice)
 

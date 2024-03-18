@@ -11,7 +11,7 @@ import (
 )
 
 type OptsType interface {
-	~*MartingaleOpts | ~*AggressiveOpts
+	~*MartingaleOpts | ~*AggressiveOpts | ~*PointsOpts
 }
 
 type StrategyOpts[T OptsType] struct {
@@ -23,6 +23,7 @@ type GeneralOpts struct {
 	AgentKeyPairIdx        uint64
 	VegaMarketId           string
 	BinanceMarket          string
+	NoBinance              bool
 	NumOrdersPerSide       int
 	LiquidityCommitment    bool
 	TargetObligationVolume decimal.Decimal
@@ -62,7 +63,7 @@ type Strategy interface {
 	GetAgentPubKey() string
 	SetAgentPubKeyBalance(decimal.Decimal)
 	GetAgentPubKeyBalance() decimal.Decimal
-	
+
 	GetPubkeyBalance(string) decimal.Decimal
 
 	GetOurBestBidAndAsk([]*vegapb.Order) (decimal.Decimal, decimal.Decimal)
