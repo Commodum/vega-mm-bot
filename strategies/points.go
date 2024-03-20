@@ -42,7 +42,10 @@ func NewPointsStrategy(opts *StrategyOpts[Points]) *PointsStrategy {
 // Will return a martingale distributed set of orders for each side of the book.
 func (strat *PointsStrategy) GetOrderSubmission(side vegapb.Side, midRefPrice, offset, targetVolume decimal.Decimal) (orders []*commandspb.OrderSubmission) {
 
-	unitlessOrderSizeSum := strat.OrderSizeBase.Pow(decimal.NewFromInt(int64(strat.NumOrdersPerSide))).Sub(decimal.NewFromInt(1))
+	// Sum = a(1-r^n)/(1-r)
+	// r: common ratio (a*base)
+	// a: 1
+	unitlessOrderSizeSum := decimal.NewFromInt(1).Sub(strat.OrderSizeBase.Pow(decimal.NewFromInt(int64(strat.NumOrdersPerSide)))).Div(decimal.NewFromInt(1).Sub(strat.OrderSizeBase))
 	volumeFraction := targetVolume.Div(unitlessOrderSizeSum)
 
 	priceF := func(i int) decimal.Decimal {
@@ -75,10 +78,17 @@ func (strat *PointsStrategy) GetOrderSubmission(side vegapb.Side, midRefPrice, o
 	sizeF := func(i int) decimal.Decimal {
 
 		// For bids, the lowest price is the last price
-		refPrice := priceF(strat.NumOrdersPerSide - 1)
+		// refPrice := priceF(strat.NumOrdersPerSide - 1)
+		refPrice := midRefPrice
 
 		unitlessOrderSize := strat.OrderSizeBase.Pow(decimal.NewFromInt(int64(i)))
 		size := unitlessOrderSize.Mul(volumeFraction).Div(refPrice)
+
+		// log.Printf("Ref Price: %s", refPrice.String())
+		// log.Printf("Unitless Order Size Sum: %s", unitlessOrderSizeSum.String())
+		// log.Printf("Unitless Order Size: %s", unitlessOrderSize.String())
+		// log.Printf("Target volume: %s", targetVolume.String())
+		// log.Printf("Size: %s", size.String())
 
 		return decimal.Max(
 			size,
@@ -90,10 +100,18 @@ func (strat *PointsStrategy) GetOrderSubmission(side vegapb.Side, midRefPrice, o
 		sizeF = func(i int) decimal.Decimal {
 
 			// For asks, the lowest price is the first price
-			refPrice := priceF(0)
+			// refPrice := priceF(0)
+			refPrice := midRefPrice
 
 			unitlessOrderSize := strat.OrderSizeBase.Pow(decimal.NewFromInt(int64(i)))
 			size := unitlessOrderSize.Mul(volumeFraction).Div(refPrice)
+
+			// log.Printf("Ref Price: %s", refPrice.String())
+			// log.Printf("Unitless Order Size Sum: %s", unitlessOrderSizeSum.String())
+			// log.Printf("Unitless Order Size: %s", unitlessOrderSize.String())
+			// log.Printf("Target volume: %s", targetVolume.String())
+			// log.Printf("Volume Fraction: %s", volumeFraction.String())
+			// log.Printf("Size: %s", size.String())
 
 			return decimal.Max(
 				size,

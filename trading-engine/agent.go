@@ -158,6 +158,11 @@ func (a *Agent) RunStrategies(metricsCh chan *metrics.MetricsEvent) {
 		// 	strat.CancelLiquidityCommitment()
 		// }
 
+		////// EGLPUSDT LP Amendment //////
+		// if strat.GetVegaMarketId() == "fc37a1eedb6e57b86823e2fc42480a0b9236aea556c1d7df49be697a93f8f2a0" {
+		// 	strat.AmendLiquidityCommitment()
+		// }
+
 	}
 }
 
