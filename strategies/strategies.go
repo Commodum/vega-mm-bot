@@ -11,7 +11,7 @@ import (
 )
 
 type OptsType interface {
-	~*MartingaleOpts | ~*AggressiveOpts | ~*PointsOpts
+	~*MartingaleOpts | ~*AggressiveOpts | ~*PointsOpts | ~*RelativeReturnFarmingOpts
 }
 
 type StrategyOpts[T OptsType] struct {

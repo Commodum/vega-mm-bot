@@ -285,6 +285,8 @@ func (strat *PointsStrategy) RunStrategy(metricsCh chan *metrics.MetricsEvent) {
 		vegaBestExternalBidAdj := decimal.NewFromInt(int64(highestBid)).Div(strat.d.priceFactor)
 		vegaBestExternalAskAdj := decimal.NewFromInt(int64(lowestAsk)).Div(strat.d.priceFactor)
 		vegaExternalMidAdj := vegaBestExternalBidAdj.Add(vegaBestExternalAskAdj).Div(decimal.NewFromInt(2))
+		_ = vegaBestExternalBidAdj
+		_ = vegaBestExternalAskAdj
 		_ = vegaExternalMidAdj
 
 		// Gradually reduce exposure over time.
@@ -352,10 +354,10 @@ func (strat *PointsStrategy) RunStrategy(metricsCh chan *metrics.MetricsEvent) {
 
 		submissions = append(submissions,
 			append(
-				strat.GetOrderSubmission(vegapb.Side_SIDE_BUY, vegaBestExternalBidAdj, bidOffset, strat.TargetObligationVolume.Mul(strat.TargetVolCoefficient)),
-				strat.GetOrderSubmission(vegapb.Side_SIDE_SELL, vegaBestExternalAskAdj, askOffset, strat.TargetObligationVolume.Mul(strat.TargetVolCoefficient))...,
-			// strat.GetOrderSubmission(vegapb.Side_SIDE_BUY, vegaExternalMidAdj, bidOffset, strat.TargetObligationVolume.Mul(strat.TargetVolCoefficient)),
-			// strat.GetOrderSubmission(vegapb.Side_SIDE_SELL, vegaExternalMidAdj, askOffset, strat.TargetObligationVolume.Mul(strat.TargetVolCoefficient))...,
+				// strat.GetOrderSubmission(vegapb.Side_SIDE_BUY, vegaBestExternalBidAdj, bidOffset, strat.TargetObligationVolume.Mul(strat.TargetVolCoefficient)),
+				// strat.GetOrderSubmission(vegapb.Side_SIDE_SELL, vegaBestExternalAskAdj, askOffset, strat.TargetObligationVolume.Mul(strat.TargetVolCoefficient))...,
+				strat.GetOrderSubmission(vegapb.Side_SIDE_BUY, vegaExternalMidAdj, bidOffset, strat.TargetObligationVolume.Mul(strat.TargetVolCoefficient)),
+				strat.GetOrderSubmission(vegapb.Side_SIDE_SELL, vegaExternalMidAdj, askOffset, strat.TargetObligationVolume.Mul(strat.TargetVolCoefficient))...,
 			)...,
 		)
 

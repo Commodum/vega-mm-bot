@@ -142,7 +142,7 @@ func (strat *BaseStrategy) AmendLiquidityCommitment() {
 		lpAmendment := &commandspb.LiquidityProvisionAmendment{
 			MarketId:         strat.VegaMarketId,
 			CommitmentAmount: strat.TargetObligationVolume.Mul(strat.d.assetFactor).Div(stakeToCcyVolume).BigInt().String(), // Divinde by stakeToCcyVolume
-			Fee:              "0.0001",
+			Fee:              "0.00000001",
 			Reference:        "Opportunities don't happen, you create them.",
 		}
 

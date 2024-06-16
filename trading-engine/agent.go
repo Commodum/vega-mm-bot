@@ -163,6 +163,9 @@ func (a *Agent) RunStrategies(metricsCh chan *metrics.MetricsEvent) {
 		// 	strat.AmendLiquidityCommitment()
 		// }
 
+		// Amend all LP commitments
+		// strat.AmendLiquidityCommitment()
+
 	}
 }
 
