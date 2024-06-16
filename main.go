@@ -373,34 +373,16 @@ func init() {
 	flag.StringVar(&walletPubkey, "wallet-pubkey", defaultWalletPubkey, "a vega public key")
 	flag.StringVar(&binanceMarkets, "binance-markets", defaultBinanceMarkets, "a comma separated list of Binance markets")
 	flag.Parse()
+}
 
-	// txBroadcastCh := make(chan *commandspb.Transaction)
-	// // powStatsCh := make(chan *vegaApiPb.PoWStatistic)
+func main() {
 
-	// port := ":8080"
-	// metricsServer := metrics.NewMetricsServer(port)
-	// metricsCh := metricsServer.Init()
+	// // Profiling for debugging
+	// go func() {
+	// 	http.ListenAndServe("localhost:1111", nil)
+	// }()
 
-	// tradingEngine := trading.NewEngine().Init(metricsCh)
-	// tradingEngine.LoadStrategies(GetFairgroundStrategies(), txBroadcastCh)
-
-	// powStatsCh := make(chan *pow.PowStatistic, tradingEngine.GetNumAgents())
-
-	// dataEngine := data.NewDataEngine().RegisterStrategies(tradingEngine.GetStrategies())
-	// dataEngine.Init(binanceWsAddr, strings.Split(vegaCoreAddrs, ","), strings.Split(vegaGrpcAddresses, ","), txBroadcastCh, powStatsCh)
-
-	// worker := pow.NewWorker().Init(powStatsCh, tradingEngine.GetNumStratsPerAgent(), tradingEngine.GetPowStores())
-
-	// worker.Start()
-
-	// wg := &sync.WaitGroup{}
-	// wg.Add(1)
-	// dataEngine.Start(wg)
-	// wg.Wait()
-
-	// tradingEngine.Start()
-
-	// In Init, we initialize all the separate engines in the trading system:
+	// We initialize all the separate engines in the trading system:
 	//
 	// Generate a broadcast channel for each signer to send signed txs to the data
 	// engine, where they are then broadcast to vega core node.
@@ -431,15 +413,6 @@ func init() {
 	//	- Start processing spam statistics events from data engine.
 	//	- Start generating pows
 	//
-
-}
-
-func main() {
-
-	// // Profiling for debugging
-	// go func() {
-	// 	http.ListenAndServe("localhost:1111", nil)
-	// }()
 
 	// ---------- MAINNET ---------- //
 	strategies := GetMainnetStrategies()
@@ -484,7 +457,7 @@ func main() {
 
 	log.Print("Terminating due to user input.")
 
-	// --------------------------------------------------------------------------- //
+	// ---------------------------------- OLD ---------------------------------- //
 
 	/*
 
